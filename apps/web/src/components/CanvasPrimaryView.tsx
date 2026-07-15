@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { WorkspaceSetupSnapshot, WorkspaceSetupStepId } from "@octogent/core";
+import type {
+  TerminalAgentProvider,
+  WorkspaceSetupSnapshot,
+  WorkspaceSetupStepId,
+} from "@octogent/core";
 import {
   Check as CheckIcon,
   ChevronDown,
@@ -63,6 +67,9 @@ type CanvasPrimaryViewProps = {
   workspaceSetupError?: string | null;
   runningWorkspaceSetupStepId?: WorkspaceSetupStepId | null;
   onRunWorkspaceSetupStep?: (stepId: WorkspaceSetupStepId) => Promise<void> | void;
+  onSetDefaultAgentProvider?: (
+    defaultAgentProvider: TerminalAgentProvider,
+  ) => Promise<WorkspaceSetupSnapshot | null>;
   onLaunchWorkspaceSetupPlanner?: () => Promise<string | undefined> | undefined;
   recentlyCreatedTerminal?: TerminalView[number] | null;
   onCanvasOpenTerminalIdsChange?: (ids: string[]) => void;
@@ -201,6 +208,7 @@ export const CanvasPrimaryView = ({
   workspaceSetupError = null,
   runningWorkspaceSetupStepId = null,
   onRunWorkspaceSetupStep,
+  onSetDefaultAgentProvider,
   onLaunchWorkspaceSetupPlanner,
   recentlyCreatedTerminal,
   onCanvasOpenTerminalIdsChange,
@@ -1197,7 +1205,10 @@ export const CanvasPrimaryView = ({
               onRunStep={(stepId) => {
                 void onRunWorkspaceSetupStep?.(stepId);
               }}
-              onLaunchClaudeCode={() => {
+              onSelectProvider={(provider) => {
+                void onSetDefaultAgentProvider?.(provider);
+              }}
+              onLaunchAgent={() => {
                 void handleLaunchWorkspaceSetupPlanner();
               }}
               isLaunchingAgent={isLaunchingWorkspaceSetupPlanner}

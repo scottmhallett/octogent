@@ -1,4 +1,8 @@
-import type { WorkspaceSetupSnapshot, WorkspaceSetupStepId } from "@octogent/core";
+import type {
+  TerminalAgentProvider,
+  WorkspaceSetupSnapshot,
+  WorkspaceSetupStepId,
+} from "@octogent/core";
 import { useCallback, useEffect, useState } from "react";
 
 import { buildWorkspaceSetupStepUrl, buildWorkspaceSetupUrl } from "../../runtime/runtimeEndpoints";
@@ -9,6 +13,9 @@ type UseWorkspaceSetupResult = {
   workspaceSetupError: string | null;
   refreshWorkspaceSetup: () => Promise<WorkspaceSetupSnapshot | null>;
   runWorkspaceSetupStep: (stepId: WorkspaceSetupStepId) => Promise<WorkspaceSetupSnapshot | null>;
+  setDefaultAgentProvider: (
+    defaultAgentProvider: TerminalAgentProvider,
+  ) => Promise<WorkspaceSetupSnapshot | null>;
 };
 
 const readErrorMessage = async (response: Response, fallback: string) => {
@@ -66,6 +73,33 @@ export const useWorkspaceSetup = (): UseWorkspaceSetupResult => {
     }
   }, []);
 
+  const setDefaultAgentProvider = useCallback(
+    async (defaultAgentProvider: TerminalAgentProvider) => {
+      try {
+        setWorkspaceSetupError(null);
+        const response = await fetch(buildWorkspaceSetupUrl(), {
+          method: "PATCH",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ defaultAgentProvider }),
+        });
+        if (!response.ok) {
+          throw new Error(await readErrorMessage(response, "Unable to update provider."));
+        }
+        const payload = (await response.json()) as WorkspaceSetupSnapshot;
+        setWorkspaceSetup(payload);
+        return payload;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to update provider.";
+        setWorkspaceSetupError(message);
+        return null;
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     void refreshWorkspaceSetup();
   }, [refreshWorkspaceSetup]);
@@ -76,5 +110,6 @@ export const useWorkspaceSetup = (): UseWorkspaceSetupResult => {
     workspaceSetupError,
     refreshWorkspaceSetup,
     runWorkspaceSetupStep,
+    setDefaultAgentProvider,
   };
 };

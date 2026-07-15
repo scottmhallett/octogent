@@ -189,5 +189,6 @@ export type CreateTerminalRuntimeOptions = {
   projectStateDir?: string | undefined;
   gitClient?: GitClient;
   getApiBaseUrl?: () => string;
+  getDefaultAgentProvider?: () => TerminalAgentProvider;
   maxConcurrentSessions?: number | undefined;
 };

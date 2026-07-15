@@ -16,6 +16,7 @@ import type { CreateApiServerOptions } from "./createApiServer/types";
 import { createUpgradeHandler } from "./createApiServer/upgradeHandler";
 import { readGithubRepoSummary as readGithubRepoSummaryDefault } from "./githubRepoSummary";
 import { createMonitorService } from "./monitor";
+import { resolveDefaultAgentProvider } from "./setupStatus";
 import { createTerminalRuntime } from "./terminalRuntime";
 
 export const createApiServer = ({
@@ -97,6 +98,8 @@ export const createApiServer = ({
     workspaceCwd: resolvedWorkspaceCwd,
     projectStateDir: resolvedStateDir,
     getApiBaseUrl,
+    getDefaultAgentProvider: () =>
+      resolveDefaultAgentProvider(resolvedStateDir).defaultAgentProvider,
   };
   if (gitClient) {
     runtimeOptions.gitClient = gitClient;

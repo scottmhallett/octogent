@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, join, resolve } from "node:path";
 
+import { isTerminalAgentProvider } from "@octogent/core";
+
 import {
   ensureOctogentGitignoreEntry,
   ensureProjectScaffold,
@@ -14,6 +16,7 @@ import {
   resolveProjectStateDir,
 } from "./projectPersistence";
 import { clearRuntimeMetadata, readRuntimeMetadata, writeRuntimeMetadata } from "./runtimeMetadata";
+import { setDefaultAgentProvider } from "./setupState";
 import {
   collectStartupPrerequisiteReport,
   formatStartupPrerequisiteReport,
@@ -59,7 +62,11 @@ const resolveRuntimeAssetPath = (...relativePathCandidates: [string[], ...string
 const DEFAULT_START_PORT = 8787;
 const MAX_PORT_ATTEMPTS = 200;
 
-const initializeProject = (workspaceCwd: string, preferredName?: string) => {
+const initializeProject = (
+  workspaceCwd: string,
+  preferredName?: string,
+  defaultAgentProvider?: "codex" | "claude-code",
+) => {
   const projectName = preferredName?.trim() || basename(workspaceCwd) || "octogent-project";
   const hadConfig = loadProjectConfig(workspaceCwd) !== null;
   const projectConfig = ensureProjectScaffold(workspaceCwd, projectName);
@@ -67,6 +74,9 @@ const initializeProject = (workspaceCwd: string, preferredName?: string) => {
   registerProject(workspaceCwd, projectConfig.displayName);
   const projectStateDir = resolveProjectStateDir(workspaceCwd, projectConfig.displayName);
   migrateStateToGlobal(workspaceCwd, projectStateDir);
+  if (defaultAgentProvider) {
+    setDefaultAgentProvider(projectStateDir, defaultAgentProvider);
+  }
   return {
     created: !hadConfig,
     projectConfig,
@@ -96,15 +106,51 @@ const resolveStartupProjectContext = (workspaceCwd: string) => {
   };
 };
 
-const initProject = (name?: string) => {
+const parseInitProjectName = () => {
+  const providerIndex = args.indexOf("--provider");
+  const rawName = args[1];
+  if (!rawName || rawName === "--provider") {
+    return undefined;
+  }
+
+  if (providerIndex === 1 || providerIndex === 2) {
+    return providerIndex === 1 ? undefined : rawName;
+  }
+
+  return rawName.startsWith("-") ? undefined : rawName;
+};
+
+const parseProviderFlag = () => {
+  const rawProvider = parseFlag("--provider");
+  if (rawProvider === undefined) {
+    return undefined;
+  }
+
+  if (!isTerminalAgentProvider(rawProvider)) {
+    console.error("Error: --provider must be either 'codex' or 'claude-code'.");
+    process.exit(1);
+  }
+
+  return rawProvider;
+};
+
+const initProject = () => {
   const projectPath = process.cwd();
-  const { created, projectConfig, projectStateDir } = initializeProject(projectPath, name);
+  const defaultAgentProvider = parseProviderFlag();
+  const { created, projectConfig, projectStateDir } = initializeProject(
+    projectPath,
+    parseInitProjectName(),
+    defaultAgentProvider,
+  );
 
   console.log(
     `${created ? "Initialized" : "Updated"} Octogent project "${projectConfig.displayName}" at ${projectPath}`,
   );
   console.log("  .octogent/ directory ready (project metadata, tentacles, worktrees)");
   console.log(`  Global state: ${projectStateDir}`);
+  if (defaultAgentProvider) {
+    console.log(`  Default provider: ${defaultAgentProvider}`);
+  }
   console.log("  .gitignore updated");
   console.log("\nRun `octogent` to start the dashboard.");
 };
@@ -404,6 +450,7 @@ const terminalCreate = async () => {
   const autoRenamePromptContext = parseFlag("--auto-rename-prompt-context");
   const promptTemplate = parseFlag("--prompt-template");
   const promptVariables = parseJsonFlag("--prompt-variables");
+  const agentProvider = parseProviderFlag();
   const apiBase = resolveRuntimeApiBase();
 
   const body: Record<string, unknown> = {};
@@ -418,6 +465,7 @@ const terminalCreate = async () => {
   if (autoRenamePromptContext) body.autoRenamePromptContext = autoRenamePromptContext;
   if (promptTemplate) body.promptTemplate = promptTemplate;
   if (promptVariables) body.promptVariables = promptVariables;
+  if (agentProvider) body.agentProvider = agentProvider;
 
   try {
     const response = await fetch(`${apiBase}/api/terminals`, {
@@ -615,7 +663,7 @@ const main = async () => {
   }
 
   if (command === "init") {
-    return initProject(args[1]);
+    return initProject();
   }
 
   if (command === "projects" || command === "project") {
@@ -672,6 +720,7 @@ const main = async () => {
   console.log(`Usage:
   octogent                             Start the dashboard in the current project
   octogent init [project-name]         Initialize the current directory explicitly
+    --provider                         codex | claude-code
   octogent projects                    List registered projects
 
   octogent tentacle create <name>      Create a tentacle (Octogent must be running)
@@ -686,6 +735,7 @@ const main = async () => {
     --parent-terminal-id               Parent terminal ID for child terminals
     --prompt-template                  Prompt template name
     --prompt-variables                 JSON object of prompt template variables
+    --provider                         codex | claude-code
   octogent terminal list               List terminal lifecycle state
   octogent terminal stop <id>          Stop a terminal session
   octogent terminal kill <id>          Kill a terminal session or recorded process

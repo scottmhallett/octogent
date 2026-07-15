@@ -11,6 +11,13 @@ const buildSetupSnapshot = (
 ): WorkspaceSetupSnapshot => ({
   isFirstRun: true,
   shouldShowSetupCard: true,
+  defaultAgentProvider: "claude-code",
+  configuredAgentProvider: null,
+  needsProviderSelection: true,
+  providerChoices: [
+    { provider: "claude-code", label: "Claude Code", available: true, selected: true },
+    { provider: "codex", label: "Codex", available: true, selected: false },
+  ],
   hasAnyTentacles: false,
   tentacleCount: 0,
   steps: [
@@ -89,6 +96,7 @@ const mockAppRequests = (
   resolveSetup: () => WorkspaceSetupSnapshot,
   options: {
     onEnsureGitignoreStep?: () => WorkspaceSetupSnapshot;
+    onProviderPatch?: (defaultAgentProvider: unknown) => WorkspaceSetupSnapshot;
   } = {},
 ) => {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -105,6 +113,16 @@ const mockAppRequests = (
 
     if (url.endsWith("/api/setup") && method === "GET") {
       return jsonResponse(resolveSetup());
+    }
+
+    if (url.endsWith("/api/setup") && method === "PATCH") {
+      const body =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      return jsonResponse(
+        options.onProviderPatch
+          ? options.onProviderPatch(body.defaultAgentProvider)
+          : resolveSetup(),
+      );
     }
 
     if (url.endsWith("/api/setup/steps/ensure-gitignore") && method === "POST") {
@@ -212,6 +230,48 @@ describe("App workspace setup", () => {
       const gitignoreStep = screen.getByText("Ignore .octogent").closest(".workspace-setup-step");
       expect(gitignoreStep).not.toBeNull();
       expect(within(gitignoreStep as HTMLElement).getByText("Done")).toBeInTheDocument();
+    });
+  });
+
+  it("persists the selected default provider from the setup card", async () => {
+    let currentSetup = buildSetupSnapshot();
+    const fetchMock = mockAppRequests(() => currentSetup, {
+      onProviderPatch: (defaultAgentProvider) => {
+        currentSetup = buildSetupSnapshot({
+          defaultAgentProvider: defaultAgentProvider === "codex" ? "codex" : "claude-code",
+          configuredAgentProvider: defaultAgentProvider === "codex" ? "codex" : "claude-code",
+          providerChoices: [
+            {
+              provider: "claude-code",
+              label: "Claude Code",
+              available: true,
+              selected: defaultAgentProvider !== "codex",
+            },
+            {
+              provider: "codex",
+              label: "Codex",
+              available: true,
+              selected: defaultAgentProvider === "codex",
+            },
+          ],
+        });
+        return currentSetup;
+      },
+    });
+
+    render(<App />);
+
+    const setupCard = await screen.findByLabelText("Workspace setup");
+    fireEvent.click(within(setupCard).getByRole("button", { name: "Codex" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/setup",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ defaultAgentProvider: "codex" }),
+        }),
+      );
     });
   });
 });

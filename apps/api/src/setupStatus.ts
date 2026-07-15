@@ -1,7 +1,12 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { WorkspaceSetupSnapshot, WorkspaceSetupStep } from "@octogent/core";
+import type {
+  TerminalAgentProvider,
+  WorkspaceSetupProviderChoice,
+  WorkspaceSetupSnapshot,
+  WorkspaceSetupStep,
+} from "@octogent/core";
 
 import { readDeckTentacles } from "./deck/readDeckTentacles";
 import {
@@ -13,10 +18,55 @@ import {
   migrateStateToGlobal,
   registerProject,
 } from "./projectPersistence";
-import { readSetupState } from "./setupState";
+import { readSetupState, setDefaultAgentProvider } from "./setupState";
 import { collectStartupPrerequisiteReport } from "./startupPrerequisites";
 
-export const initializeWorkspaceFiles = (workspaceCwd: string, projectStateDir: string) => {
+const PROVIDER_LABELS: Record<TerminalAgentProvider, string> = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+};
+
+export const resolveDefaultAgentProvider = (
+  projectStateDir: string,
+  availability = collectStartupPrerequisiteReport().availability,
+): {
+  defaultAgentProvider: TerminalAgentProvider;
+  configuredAgentProvider: TerminalAgentProvider | null;
+  needsProviderSelection: boolean;
+  providerChoices: WorkspaceSetupProviderChoice[];
+} => {
+  const setupState = readSetupState(projectStateDir);
+  const configuredAgentProvider = setupState.defaultAgentProvider ?? null;
+  const availableProviders: TerminalAgentProvider[] = [];
+  if (availability.codex) availableProviders.push("codex");
+  if (availability.claude) availableProviders.push("claude-code");
+
+  const autoSelectedProvider: TerminalAgentProvider =
+    availableProviders.length === 1 && availableProviders[0]
+      ? availableProviders[0]
+      : "claude-code";
+  const defaultAgentProvider = configuredAgentProvider ?? autoSelectedProvider;
+  const needsProviderSelection =
+    configuredAgentProvider === null && availability.codex && availability.claude;
+
+  return {
+    defaultAgentProvider,
+    configuredAgentProvider,
+    needsProviderSelection,
+    providerChoices: (["claude-code", "codex"] as TerminalAgentProvider[]).map((provider) => ({
+      provider,
+      label: PROVIDER_LABELS[provider],
+      available: provider === "codex" ? availability.codex : availability.claude,
+      selected: provider === defaultAgentProvider,
+    })),
+  };
+};
+
+export const initializeWorkspaceFiles = (
+  workspaceCwd: string,
+  projectStateDir: string,
+  defaultAgentProvider?: TerminalAgentProvider,
+) => {
   const projectName = loadProjectConfig(workspaceCwd)?.displayName;
   const projectConfig = ensureProjectScaffold(
     workspaceCwd,
@@ -26,6 +76,9 @@ export const initializeWorkspaceFiles = (workspaceCwd: string, projectStateDir: 
   registerProject(workspaceCwd, projectConfig.displayName);
   mkdirSync(join(projectStateDir, "state"), { recursive: true });
   migrateStateToGlobal(workspaceCwd, projectStateDir);
+  if (defaultAgentProvider) {
+    setDefaultAgentProvider(projectStateDir, defaultAgentProvider);
+  }
 
   return { projectConfig, projectStateDir };
 };
@@ -52,12 +105,63 @@ export const readWorkspaceSetupSnapshot = (
   const setupState = readSetupState(projectStateDir);
   const isFirstRun = !hasAnyTentacles && !setupState.tentaclesInitializedAt;
   const verifiedSteps = setupState.verifiedSteps ?? {};
+  const isCodexVerified = Boolean(verifiedSteps["check-codex"]);
   const isClaudeVerified = Boolean(verifiedSteps["check-claude"]);
   const isGitVerified = Boolean(verifiedSteps["check-git"]);
   const isCurlVerified = Boolean(verifiedSteps["check-curl"]);
+  const hasCodex = prerequisites.availability.codex;
   const hasClaudeCode = prerequisites.availability.claude;
   const hasGit = prerequisites.availability.git;
   const hasCurl = prerequisites.availability.curl;
+  const providerResolution = resolveDefaultAgentProvider(
+    projectStateDir,
+    prerequisites.availability,
+  );
+
+  const codexStep: WorkspaceSetupStep = {
+    id: "check-codex",
+    title: "Check Codex",
+    description: "Verify the Codex workflow is available on this machine.",
+    complete: hasCodex && isCodexVerified,
+    required: providerResolution.defaultAgentProvider === "codex",
+    actionLabel: "Check Codex",
+    statusText: hasCodex
+      ? isCodexVerified
+        ? "Codex is available."
+        : "Confirm Codex before using it as the planner."
+      : "Codex is unavailable.",
+    guidance: hasCodex
+      ? isCodexVerified
+        ? null
+        : "Click to verify the Codex workflow on this machine."
+      : "Install Codex and run `codex login` before using Codex terminals.",
+    command: hasCodex ? null : "codex login",
+  };
+
+  const claudeStep: WorkspaceSetupStep = {
+    id: "check-claude",
+    title: "Check Claude Code",
+    description: "Verify the Claude Code workflow is available on this machine.",
+    complete: hasClaudeCode && isClaudeVerified,
+    required: providerResolution.defaultAgentProvider === "claude-code",
+    actionLabel: "Check Claude Code",
+    statusText: hasClaudeCode
+      ? isClaudeVerified
+        ? "Claude Code is available."
+        : "Confirm Claude Code before using it as the planner."
+      : "Claude Code is unavailable.",
+    guidance: hasClaudeCode
+      ? isClaudeVerified
+        ? null
+        : "Click to verify the Claude Code workflow on this machine."
+      : "Install Claude Code and log in before using Claude terminals.",
+    command: hasClaudeCode ? null : "claude login",
+  };
+
+  const providerSteps =
+    providerResolution.defaultAgentProvider === "codex"
+      ? [codexStep, claudeStep]
+      : [claudeStep, codexStep];
 
   const steps: WorkspaceSetupStep[] = [
     {
@@ -90,25 +194,7 @@ export const readWorkspaceSetupSnapshot = (
         : "Git ignore entry is missing. Create or update .gitignore with the Octogent workspace path.",
       command: hasGitignore ? null : "printf '.octogent\\n' >> .gitignore",
     },
-    {
-      id: "check-claude",
-      title: "Check Claude Code",
-      description: "Verify the default Claude Code workflow is available on this machine.",
-      complete: hasClaudeCode && isClaudeVerified,
-      required: false,
-      actionLabel: "Check Claude Code",
-      statusText: hasClaudeCode
-        ? isClaudeVerified
-          ? "Claude Code is available."
-          : "Confirm Claude Code before using the planner."
-        : "Claude Code is unavailable.",
-      guidance: hasClaudeCode
-        ? isClaudeVerified
-          ? null
-          : "Click to verify the Claude Code workflow on this machine."
-        : "Install Claude Code and log in before using the default Claude workflow.",
-      command: hasClaudeCode ? null : "claude login",
-    },
+    ...providerSteps,
     {
       id: "check-git",
       title: "Check Git",
@@ -167,8 +253,14 @@ export const readWorkspaceSetupSnapshot = (
   return {
     isFirstRun,
     shouldShowSetupCard: isFirstRun || (!hasAnyTentacles && (!hasProjectScaffold || !hasGitignore)),
+    defaultAgentProvider: providerResolution.defaultAgentProvider,
+    configuredAgentProvider: providerResolution.configuredAgentProvider,
+    needsProviderSelection: providerResolution.needsProviderSelection,
+    providerChoices: providerResolution.providerChoices,
     hasAnyTentacles,
     tentacleCount,
     steps,
   };
 };
+
+export { setDefaultAgentProvider };

@@ -58,6 +58,9 @@ type DeckPrimaryViewProps = {
   workspaceSetupError: string | null;
   onRefreshWorkspaceSetup: () => Promise<WorkspaceSetupSnapshot | null>;
   onRunWorkspaceSetupStep: (stepId: WorkspaceSetupStepId) => Promise<WorkspaceSetupSnapshot | null>;
+  onSetDefaultAgentProvider: (
+    defaultAgentProvider: TerminalAgentProvider,
+  ) => Promise<WorkspaceSetupSnapshot | null>;
   suppressWorkspaceSetupCard?: boolean;
 };
 
@@ -68,6 +71,7 @@ export const DeckPrimaryView = ({
   workspaceSetupError,
   onRefreshWorkspaceSetup,
   onRunWorkspaceSetupStep,
+  onSetDefaultAgentProvider,
   suppressWorkspaceSetupCard = false,
 }: DeckPrimaryViewProps) => {
   const [tentacles, setTentacles] = useState<DeckTentacleSummary[]>([]);
@@ -80,19 +84,13 @@ export const DeckPrimaryView = ({
   const [availableSkills, setAvailableSkills] = useState<DeckAvailableSkill[]>([]);
   const [savingTentacleSkillsId, setSavingTentacleSkillsId] = useState<string | null>(null);
 
-  const [selectedAgent, setSelectedAgent] = useState<TerminalAgentProvider>("claude-code");
+  const [selectedAgent, setSelectedAgent] = useState<TerminalAgentProvider>(
+    workspaceSetup?.defaultAgentProvider ?? "claude-code",
+  );
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const agentMenuRef = useRef<HTMLDivElement>(null);
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false);
-  const [runningSetupStepId, setRunningSetupStepId] = useState<
-    | "initialize-workspace"
-    | "ensure-gitignore"
-    | "check-claude"
-    | "check-git"
-    | "check-curl"
-    | "create-tentacles"
-    | null
-  >(null);
+  const [runningSetupStepId, setRunningSetupStepId] = useState<WorkspaceSetupStepId | null>(null);
 
   // Fetch tentacle list
   const fetchTentacles = useCallback(async () => {
@@ -112,6 +110,12 @@ export const DeckPrimaryView = ({
   useEffect(() => {
     void fetchTentacles();
   }, [fetchTentacles]);
+
+  useEffect(() => {
+    if (workspaceSetup?.defaultAgentProvider) {
+      setSelectedAgent(workspaceSetup.defaultAgentProvider);
+    }
+  }, [workspaceSetup?.defaultAgentProvider]);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,15 +230,7 @@ export const DeckPrimaryView = ({
   }, [selectedAgent, fetchTentacles]);
 
   const handleRunSetupStep = useCallback(
-    async (
-      stepId:
-        | "initialize-workspace"
-        | "ensure-gitignore"
-        | "check-claude"
-        | "check-git"
-        | "check-curl"
-        | "create-tentacles",
-    ) => {
+    async (stepId: WorkspaceSetupStepId) => {
       setRunningSetupStepId(stepId);
       try {
         await onRunWorkspaceSetupStep(stepId);
@@ -362,7 +358,11 @@ export const DeckPrimaryView = ({
                 isLoading={isWorkspaceSetupLoading}
                 error={workspaceSetupError}
                 onRunStep={handleRunSetupStep}
-                onLaunchClaudeCode={handleLaunchAgent}
+                onSelectProvider={(provider) => {
+                  setSelectedAgent(provider);
+                  void onSetDefaultAgentProvider(provider);
+                }}
+                onLaunchAgent={handleLaunchAgent}
                 isLaunchingAgent={isLaunchingAgent}
                 isRunningStepId={runningSetupStepId}
               />
@@ -405,6 +405,7 @@ export const DeckPrimaryView = ({
       handleRunSetupStep,
       isLaunchingAgent,
       isWorkspaceSetupLoading,
+      onSetDefaultAgentProvider,
       runningSetupStepId,
       selectedAgent,
       shouldShowWorkspaceSetup,
@@ -446,7 +447,11 @@ export const DeckPrimaryView = ({
                 isLoading={isWorkspaceSetupLoading}
                 error={workspaceSetupError}
                 onRunStep={handleRunSetupStep}
-                onLaunchClaudeCode={handleLaunchAgent}
+                onSelectProvider={(provider) => {
+                  setSelectedAgent(provider);
+                  void onSetDefaultAgentProvider(provider);
+                }}
+                onLaunchAgent={handleLaunchAgent}
                 isLaunchingAgent={isLaunchingAgent}
                 isRunningStepId={runningSetupStepId}
               />
