@@ -90,6 +90,7 @@ export const DeckPrimaryView = ({
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const agentMenuRef = useRef<HTMLDivElement>(null);
   const [isLaunchingAgent, setIsLaunchingAgent] = useState(false);
+  const [isSavingDefaultProvider, setIsSavingDefaultProvider] = useState(false);
   const [runningSetupStepId, setRunningSetupStepId] = useState<WorkspaceSetupStepId | null>(null);
 
   // Fetch tentacle list
@@ -229,6 +230,19 @@ export const DeckPrimaryView = ({
     }
   }, [selectedAgent, fetchTentacles]);
 
+  const handleSelectSetupProvider = useCallback(
+    async (provider: TerminalAgentProvider) => {
+      setSelectedAgent(provider);
+      setIsSavingDefaultProvider(true);
+      try {
+        await onSetDefaultAgentProvider(provider);
+      } finally {
+        setIsSavingDefaultProvider(false);
+      }
+    },
+    [onSetDefaultAgentProvider],
+  );
+
   const handleRunSetupStep = useCallback(
     async (stepId: WorkspaceSetupStepId) => {
       setRunningSetupStepId(stepId);
@@ -359,11 +373,11 @@ export const DeckPrimaryView = ({
                 error={workspaceSetupError}
                 onRunStep={handleRunSetupStep}
                 onSelectProvider={(provider) => {
-                  setSelectedAgent(provider);
-                  void onSetDefaultAgentProvider(provider);
+                  void handleSelectSetupProvider(provider);
                 }}
                 onLaunchAgent={handleLaunchAgent}
                 isLaunchingAgent={isLaunchingAgent}
+                isSavingProvider={isSavingDefaultProvider}
                 isRunningStepId={runningSetupStepId}
               />
             ) : (
@@ -403,9 +417,10 @@ export const DeckPrimaryView = ({
       focus?.type,
       handleLaunchAgent,
       handleRunSetupStep,
+      handleSelectSetupProvider,
       isLaunchingAgent,
+      isSavingDefaultProvider,
       isWorkspaceSetupLoading,
-      onSetDefaultAgentProvider,
       runningSetupStepId,
       selectedAgent,
       shouldShowWorkspaceSetup,
@@ -448,11 +463,11 @@ export const DeckPrimaryView = ({
                 error={workspaceSetupError}
                 onRunStep={handleRunSetupStep}
                 onSelectProvider={(provider) => {
-                  setSelectedAgent(provider);
-                  void onSetDefaultAgentProvider(provider);
+                  void handleSelectSetupProvider(provider);
                 }}
                 onLaunchAgent={handleLaunchAgent}
                 isLaunchingAgent={isLaunchingAgent}
+                isSavingProvider={isSavingDefaultProvider}
                 isRunningStepId={runningSetupStepId}
               />
             ) : (

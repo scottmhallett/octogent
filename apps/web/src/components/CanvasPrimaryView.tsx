@@ -248,6 +248,7 @@ export const CanvasPrimaryView = ({
   const [pendingOpenAgentId, setPendingOpenAgentId] = useState<string | null>(null);
   const [hideIdleTerminals, setHideIdleTerminals] = useState(false);
   const [isLaunchingWorkspaceSetupPlanner, setIsLaunchingWorkspaceSetupPlanner] = useState(false);
+  const [isSavingWorkspaceSetupProvider, setIsSavingWorkspaceSetupProvider] = useState(false);
   const hasHydratedTerminals = useRef(false);
   const hasHydratedTentacles = useRef(false);
   const lastHandledCreatedTerminalIdRef = useRef<string | null>(null);
@@ -981,6 +982,22 @@ export const CanvasPrimaryView = ({
     }
   }, [onLaunchWorkspaceSetupPlanner]);
 
+  const handleSelectWorkspaceSetupProvider = useCallback(
+    async (provider: TerminalAgentProvider) => {
+      if (!onSetDefaultAgentProvider) {
+        return;
+      }
+
+      setIsSavingWorkspaceSetupProvider(true);
+      try {
+        await onSetDefaultAgentProvider(provider);
+      } finally {
+        setIsSavingWorkspaceSetupProvider(false);
+      }
+    },
+    [onSetDefaultAgentProvider],
+  );
+
   return (
     <section ref={containerRef} className="canvas-view" aria-label="Canvas graph view">
       <div className={`canvas-graph-panel${hasPanels ? " canvas-graph-panel--split" : ""}`}>
@@ -1206,12 +1223,13 @@ export const CanvasPrimaryView = ({
                 void onRunWorkspaceSetupStep?.(stepId);
               }}
               onSelectProvider={(provider) => {
-                void onSetDefaultAgentProvider?.(provider);
+                void handleSelectWorkspaceSetupProvider(provider);
               }}
               onLaunchAgent={() => {
                 void handleLaunchWorkspaceSetupPlanner();
               }}
               isLaunchingAgent={isLaunchingWorkspaceSetupPlanner}
+              isSavingProvider={isSavingWorkspaceSetupProvider}
               isRunningStepId={runningWorkspaceSetupStepId}
             />
           </div>

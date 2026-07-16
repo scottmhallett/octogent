@@ -14,6 +14,7 @@ type WorkspaceSetupCardProps = {
   onSelectProvider: (provider: TerminalAgentProvider) => void;
   onLaunchAgent: () => void;
   isLaunchingAgent?: boolean;
+  isSavingProvider?: boolean;
   isRunningStepId?: WorkspaceSetupStepId | null;
 };
 
@@ -34,6 +35,7 @@ export const WorkspaceSetupCard = ({
   onSelectProvider,
   onLaunchAgent,
   isLaunchingAgent,
+  isSavingProvider,
   isRunningStepId,
 }: WorkspaceSetupCardProps) => (
   <section
@@ -76,7 +78,7 @@ export const WorkspaceSetupCard = ({
               type="button"
               className="workspace-setup-provider-option"
               data-selected={choice.selected ? "true" : "false"}
-              disabled={!choice.available || isLoading}
+              disabled={!choice.available || isLoading || isSavingProvider}
               onClick={() => onSelectProvider(choice.provider)}
             >
               {choice.label}
@@ -91,7 +93,9 @@ export const WorkspaceSetupCard = ({
       {(workspaceSetup?.steps ?? []).map((step) => {
         const isCreateTentaclesStep = step.id === "create-tentacles";
         const buttonLabel = isCreateTentaclesStep ? "Launch Agent" : step.actionLabel;
-        const isButtonDisabled = isCreateTentaclesStep ? isLaunchingAgent : isLoading;
+        const isButtonDisabled = isCreateTentaclesStep
+          ? isLaunchingAgent || isSavingProvider
+          : isLoading;
         const isButtonRunning = isCreateTentaclesStep
           ? isLaunchingAgent
           : isRunningStepId === step.id;

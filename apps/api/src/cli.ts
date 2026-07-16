@@ -121,9 +121,15 @@ const parseInitProjectName = () => {
 };
 
 const parseProviderFlag = () => {
-  const rawProvider = parseFlag("--provider");
-  if (rawProvider === undefined) {
+  const providerIndex = args.indexOf("--provider");
+  if (providerIndex === -1) {
     return undefined;
+  }
+
+  const rawProvider = args[providerIndex + 1];
+  if (rawProvider === undefined || rawProvider.startsWith("-")) {
+    console.error("Error: --provider requires a value: 'codex' or 'claude-code'.");
+    process.exit(1);
   }
 
   if (!isTerminalAgentProvider(rawProvider)) {
