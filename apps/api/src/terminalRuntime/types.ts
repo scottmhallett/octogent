@@ -83,6 +83,8 @@ export type TerminalSession = {
   isClosed?: boolean;
   hasSeenProcessing?: boolean;
   lastToolName?: string | undefined;
+  bootstrapInput?: string | undefined;
+  promptDelivery?: "argv" | "deferred-paste" | undefined;
 };
 
 export type TerminalNameOrigin = "generated" | "user" | "prompt";

@@ -7,9 +7,9 @@ import { type IPty, spawn } from "node-pty";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import { type AgentRuntimeState, AgentStateTracker } from "../agentStateDetection";
+import { buildAgentProviderLaunch } from "./agentProviderLaunch";
 import {
   DEFAULT_AGENT_PROVIDER,
-  TERMINAL_BOOTSTRAP_COMMANDS,
   TERMINAL_MAX_CONCURRENT_SESSIONS,
   TERMINAL_SCROLLBACK_MAX_BYTES,
   TERMINAL_SESSION_IDLE_GRACE_MS,
@@ -471,16 +471,18 @@ export const createSessionRuntime = ({
     }
 
     session.isBootstrapCommandSent = true;
-    const terminal = terminals.get(session.terminalId);
-    const provider = terminal?.agentProvider ?? DEFAULT_AGENT_PROVIDER;
+    if (session.bootstrapInput) {
+      appendDebugLog(session, `bootstrap session=${sessionId} command=${session.bootstrapInput}`);
+      session.pty.write(`${session.bootstrapInput}\r`);
+    } else {
+      appendDebugLog(session, `bootstrap session=${sessionId} command=<direct>`);
+    }
 
-    const bootstrapCommand =
-      TERMINAL_BOOTSTRAP_COMMANDS[provider] ?? TERMINAL_BOOTSTRAP_COMMANDS[DEFAULT_AGENT_PROVIDER];
-    appendDebugLog(session, `bootstrap session=${sessionId} command=${bootstrapCommand}`);
-    session.pty.write(`${bootstrapCommand}\r`);
-
-    // Schedule initial prompt injection after Claude Code has had time to boot.
-    if (session.initialPrompt && !session.isInitialPromptSent) {
+    if (
+      session.initialPrompt &&
+      session.promptDelivery === "deferred-paste" &&
+      !session.isInitialPromptSent
+    ) {
       schedulePromptTimer(
         session,
         sessionId,
@@ -506,7 +508,12 @@ export const createSessionRuntime = ({
       );
     }
 
-    if (session.initialInputDraft && !session.isInitialInputDraftSent && !session.initialPrompt) {
+    if (
+      session.initialInputDraft &&
+      session.promptDelivery === "deferred-paste" &&
+      !session.isInitialInputDraftSent &&
+      !session.initialPrompt
+    ) {
       schedulePromptTimer(
         session,
         sessionId,
@@ -545,19 +552,26 @@ export const createSessionRuntime = ({
 
     ensureNodePtySpawnHelperExecutable();
     const shellLaunch = getShellLaunch();
+    const provider = terminalRecord?.agentProvider ?? DEFAULT_AGENT_PROVIDER;
+    const launch = buildAgentProviderLaunch({
+      provider,
+      cwd: tentacleCwd,
+      ...(terminalRecord?.initialPrompt ? { initialPrompt: terminalRecord.initialPrompt } : {}),
+      shellLaunch,
+    });
 
     let pty: IPty;
     try {
-      pty = spawn(shellLaunch.command, shellLaunch.args, {
+      pty = spawn(launch.command, launch.args, {
         cols: DEFAULT_PTY_COLS,
         rows: DEFAULT_PTY_ROWS,
-        cwd: tentacleCwd,
+        cwd: launch.cwd,
         env: createShellEnvironment({ octogentSessionId: sessionId }),
         name: "xterm-256color",
       });
     } catch (error) {
       throw new Error(
-        `Unable to start terminal shell (${shellLaunch.command}): ${toErrorMessage(error)}`,
+        `Unable to start ${launch.label} terminal (${launch.command}): ${toErrorMessage(error)}`,
       );
     }
 
@@ -581,6 +595,8 @@ export const createSessionRuntime = ({
       pendingInput: "",
       hasTranscriptEnded: false,
       keepAliveWithoutClients: Boolean(terminalRecord?.initialPrompt),
+      bootstrapInput: launch.bootstrapInput,
+      promptDelivery: launch.promptDelivery,
     };
     if (debugLog) {
       session.debugLog = debugLog;

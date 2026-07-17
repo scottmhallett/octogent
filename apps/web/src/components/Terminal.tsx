@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import type { TerminalAgentProvider } from "@octogent/core";
 import { FileText, X } from "lucide-react";
 import { buildTerminalSocketUrl } from "../runtime/runtimeEndpoints";
 import { type AgentRuntimeState, AgentStateBadge, isAgentRuntimeState } from "./AgentStateBadge";
@@ -12,6 +13,7 @@ import "xterm/css/xterm.css";
 type TerminalProps = {
   terminalId: string;
   terminalLabel?: string;
+  agentProvider?: TerminalAgentProvider;
   layoutVersion?: string | number;
   isSelected?: boolean;
   initialPrompt?: string;
@@ -68,6 +70,7 @@ const PromptInjectIcon = () => (
 export const Terminal = ({
   terminalId,
   terminalLabel,
+  agentProvider,
   layoutVersion,
   isSelected,
   initialPrompt,
@@ -100,6 +103,8 @@ export const Terminal = ({
   const onTerminalRenamedRef = useRef(onTerminalRenamed);
   const rawTitle = terminalLabel && terminalLabel.length > 0 ? terminalLabel : terminalId;
   const terminalTitle = rawTitle.length > 24 ? `${rawTitle.slice(0, 24)}...` : rawTitle;
+  const providerLabel =
+    agentProvider === "codex" ? "Codex" : agentProvider === "claude-code" ? "Claude" : null;
 
   onTerminalActivityRef.current = onTerminalActivity;
   onTerminalRenamedRef.current = onTerminalRenamed;
@@ -453,6 +458,7 @@ export const Terminal = ({
     >
       <div className="terminal-header" data-connection-state={connectionState}>
         <span className="terminal-title">{terminalTitle}</span>
+        {providerLabel ? <span className="terminal-provider-badge">{providerLabel}</span> : null}
         {initialPrompt && !isPromptBannerDismissed && (
           <div className="terminal-prompt-banner">
             <button

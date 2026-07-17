@@ -36,6 +36,8 @@ const isLifecycleState = (value: unknown) =>
   value === "exited" ||
   value === "stale";
 
+const isTerminalAgentProvider = (value: unknown) => value === "claude-code" || value === "codex";
+
 const isTerminalSnapshot = (value: unknown): value is TerminalSnapshot => {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -52,6 +54,7 @@ const isTerminalSnapshot = (value: unknown): value is TerminalSnapshot => {
     (snapshot.workspaceMode === undefined ||
       snapshot.workspaceMode === "shared" ||
       snapshot.workspaceMode === "worktree") &&
+    (snapshot.agentProvider === undefined || isTerminalAgentProvider(snapshot.agentProvider)) &&
     typeof snapshot.createdAt === "string" &&
     (snapshot.lifecycleState === undefined || isLifecycleState(snapshot.lifecycleState)) &&
     (snapshot.lifecycleReason === undefined || typeof snapshot.lifecycleReason === "string") &&

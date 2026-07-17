@@ -47,7 +47,12 @@ const normalizeDeckAvailableSkill = (value: unknown): DeckAvailableSkill | null 
 type FocusState =
   | { type: "vault-browser"; tentacleId: string }
   | { type: "vault"; tentacleId: string; fileName: string }
-  | { type: "terminal"; agentId: string; terminalLabel: string };
+  | {
+      type: "terminal";
+      agentId: string;
+      terminalLabel: string;
+      agentProvider?: TerminalAgentProvider;
+    };
 
 type EmptyViewMode = "idle" | "adding";
 
@@ -221,7 +226,12 @@ export const DeckPrimaryView = ({
       if (!response.ok) return;
       const data = await response.json();
       const agentId = (data.terminalId ?? data.tentacleId) as string;
-      setFocus({ type: "terminal", agentId, terminalLabel: "Tentacle Planner" });
+      setFocus({
+        type: "terminal",
+        agentId,
+        terminalLabel: "Tentacle Planner",
+        agentProvider: selectedAgent,
+      });
       await fetchTentacles();
     } catch {
       // silently ignore
@@ -624,7 +634,11 @@ export const DeckPrimaryView = ({
                 <strong>{focus.terminalLabel}</strong>
               </span>
             </header>
-            <Terminal terminalId={focus.agentId} terminalLabel={focus.terminalLabel} />
+            <Terminal
+              terminalId={focus.agentId}
+              terminalLabel={focus.terminalLabel}
+              {...(focus.agentProvider ? { agentProvider: focus.agentProvider } : {})}
+            />
           </div>
         )}
       </div>
