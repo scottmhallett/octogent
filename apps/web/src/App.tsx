@@ -1,4 +1,9 @@
-import { type TerminalSnapshot, buildTerminalList, isAgentRuntimeState } from "@octogent/core";
+import {
+  type TerminalSnapshot,
+  type WorkspaceSetupStepId,
+  buildTerminalList,
+  isAgentRuntimeState,
+} from "@octogent/core";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { useBackendLivenessPolling } from "./app/hooks/useBackendLivenessPolling";
@@ -103,16 +108,10 @@ export const App = () => {
     workspaceSetupError,
     refreshWorkspaceSetup,
     runWorkspaceSetupStep,
+    setDefaultAgentProvider,
   } = useWorkspaceSetup();
-  const [runningWorkspaceSetupStepId, setRunningWorkspaceSetupStepId] = useState<
-    | "initialize-workspace"
-    | "ensure-gitignore"
-    | "check-claude"
-    | "check-git"
-    | "check-curl"
-    | "create-tentacles"
-    | null
-  >(null);
+  const [runningWorkspaceSetupStepId, setRunningWorkspaceSetupStepId] =
+    useState<WorkspaceSetupStepId | null>(null);
 
   const readColumns = useCallback(
     async (signal?: AbortSignal) => {
@@ -398,15 +397,7 @@ export const App = () => {
   }, []);
 
   const handleRunWorkspaceSetupStep = useCallback(
-    async (
-      stepId:
-        | "initialize-workspace"
-        | "ensure-gitignore"
-        | "check-claude"
-        | "check-git"
-        | "check-curl"
-        | "create-tentacles",
-    ) => {
+    async (stepId: WorkspaceSetupStepId) => {
       setRunningWorkspaceSetupStepId(stepId);
       try {
         await runWorkspaceSetupStep(stepId);
@@ -471,6 +462,7 @@ export const App = () => {
               workspaceSetupError,
               onRefreshWorkspaceSetup: refreshWorkspaceSetup,
               onRunWorkspaceSetupStep: runWorkspaceSetupStep,
+              onSetDefaultAgentProvider: setDefaultAgentProvider,
               suppressWorkspaceSetupCard: true,
             }}
             isMonitorVisible={isMonitorVisible}
@@ -522,6 +514,7 @@ export const App = () => {
               workspaceSetupError,
               runningWorkspaceSetupStepId,
               onRunWorkspaceSetupStep: handleRunWorkspaceSetupStep,
+              onSetDefaultAgentProvider: setDefaultAgentProvider,
               onLaunchWorkspaceSetupPlanner: async () => {
                 const response = await fetch("/api/terminals", {
                   method: "POST",
@@ -529,7 +522,6 @@ export const App = () => {
                   body: JSON.stringify({
                     name: "tentacle-planner",
                     workspaceMode: "shared",
-                    agentProvider: "claude-code",
                     promptTemplate: "tentacle-planner",
                   }),
                 });

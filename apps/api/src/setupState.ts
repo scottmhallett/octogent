@@ -1,14 +1,19 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { WorkspaceSetupStepId } from "@octogent/core";
+import {
+  type TerminalAgentProvider,
+  type WorkspaceSetupStepId,
+  isTerminalAgentProvider,
+} from "@octogent/core";
 
 const SETUP_STATE_RELATIVE_PATH = join("state", "setup.json");
-const VERIFIED_SETUP_STEP_IDS = ["check-claude", "check-git", "check-curl"] as const;
+const VERIFIED_SETUP_STEP_IDS = ["check-codex", "check-claude", "check-git", "check-curl"] as const;
 
 type VerifiedSetupStepId = (typeof VERIFIED_SETUP_STEP_IDS)[number];
 
 export type SetupState = {
   version: 1;
+  defaultAgentProvider?: TerminalAgentProvider;
   tentaclesInitializedAt?: string;
   verifiedSteps?: Partial<Record<VerifiedSetupStepId, string>>;
 };
@@ -37,6 +42,9 @@ export const readSetupState = (stateDir: string): SetupState => {
 
     return {
       version: 1,
+      ...(isTerminalAgentProvider(raw.defaultAgentProvider)
+        ? { defaultAgentProvider: raw.defaultAgentProvider }
+        : {}),
       ...(typeof raw.tentaclesInitializedAt === "string"
         ? { tentaclesInitializedAt: raw.tentaclesInitializedAt }
         : {}),
@@ -50,6 +58,17 @@ export const readSetupState = (stateDir: string): SetupState => {
 export const writeSetupState = (stateDir: string, state: SetupState) => {
   mkdirSync(join(stateDir, "state"), { recursive: true });
   writeFileSync(join(stateDir, SETUP_STATE_RELATIVE_PATH), `${JSON.stringify(state, null, 2)}\n`);
+};
+
+export const setDefaultAgentProvider = (
+  stateDir: string,
+  defaultAgentProvider: TerminalAgentProvider,
+) => {
+  const currentState = readSetupState(stateDir);
+  writeSetupState(stateDir, {
+    ...currentState,
+    defaultAgentProvider,
+  });
 };
 
 export const markSetupStepVerified = (stateDir: string, stepId: WorkspaceSetupStepId) => {

@@ -1,4 +1,8 @@
-import type { WorkspaceSetupSnapshot, WorkspaceSetupStepId } from "@octogent/core";
+import type {
+  TerminalAgentProvider,
+  WorkspaceSetupSnapshot,
+  WorkspaceSetupStepId,
+} from "@octogent/core";
 import { OctopusGlyph } from "../EmptyOctopus";
 
 type WorkspaceSetupCardProps = {
@@ -7,14 +11,16 @@ type WorkspaceSetupCardProps = {
   isLoading: boolean;
   error: string | null;
   onRunStep: (stepId: WorkspaceSetupStepId) => void;
-  onLaunchClaudeCode: () => void;
+  onSelectProvider: (provider: TerminalAgentProvider) => void;
+  onLaunchAgent: () => void;
   isLaunchingAgent?: boolean;
+  isSavingProvider?: boolean;
   isRunningStepId?: WorkspaceSetupStepId | null;
 };
 
 const buildStepSummary = (stepId: WorkspaceSetupStepId, description: string) => {
   if (stepId === "create-tentacles") {
-    return "Launch Claude Code so it can plan and create the first tentacles.";
+    return "Launch the selected coding agent so it can plan and create the first tentacles.";
   }
 
   return description;
@@ -26,8 +32,10 @@ export const WorkspaceSetupCard = ({
   isLoading,
   error,
   onRunStep,
-  onLaunchClaudeCode,
+  onSelectProvider,
+  onLaunchAgent,
   isLaunchingAgent,
+  isSavingProvider,
   isRunningStepId,
 }: WorkspaceSetupCardProps) => (
   <section
@@ -55,11 +63,39 @@ export const WorkspaceSetupCard = ({
 
     {error ? <p className="workspace-setup-card-error">{error}</p> : null}
 
+    {(workspaceSetup?.providerChoices.length ?? 0) > 0 ? (
+      <div className="workspace-setup-provider">
+        <div className="workspace-setup-provider-copy">
+          <span className="workspace-setup-provider-title">Default Agent</span>
+          <span className="workspace-setup-provider-desc">
+            New planners and terminals use this provider unless a workflow overrides it.
+          </span>
+        </div>
+        <div className="workspace-setup-provider-options">
+          {workspaceSetup?.providerChoices.map((choice) => (
+            <button
+              key={choice.provider}
+              type="button"
+              className="workspace-setup-provider-option"
+              data-selected={choice.selected ? "true" : "false"}
+              disabled={!choice.available || isLoading || isSavingProvider}
+              onClick={() => onSelectProvider(choice.provider)}
+            >
+              {choice.label}
+              {!choice.available ? " unavailable" : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null}
+
     <div className="workspace-setup-step-list">
       {(workspaceSetup?.steps ?? []).map((step) => {
         const isCreateTentaclesStep = step.id === "create-tentacles";
-        const buttonLabel = isCreateTentaclesStep ? "Launch Claude Code" : step.actionLabel;
-        const isButtonDisabled = isCreateTentaclesStep ? isLaunchingAgent : isLoading;
+        const buttonLabel = isCreateTentaclesStep ? "Launch Agent" : step.actionLabel;
+        const isButtonDisabled = isCreateTentaclesStep
+          ? isLaunchingAgent || isSavingProvider
+          : isLoading;
         const isButtonRunning = isCreateTentaclesStep
           ? isLaunchingAgent
           : isRunningStepId === step.id;
@@ -84,7 +120,7 @@ export const WorkspaceSetupCard = ({
                 disabled={Boolean(isButtonDisabled)}
                 onClick={() => {
                   if (isCreateTentaclesStep) {
-                    onLaunchClaudeCode();
+                    onLaunchAgent();
                     return;
                   }
 

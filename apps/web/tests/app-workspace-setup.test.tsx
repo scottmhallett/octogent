@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkspaceSetupSnapshot } from "@octogent/core";
@@ -11,6 +11,13 @@ const buildSetupSnapshot = (
 ): WorkspaceSetupSnapshot => ({
   isFirstRun: true,
   shouldShowSetupCard: true,
+  defaultAgentProvider: "claude-code",
+  configuredAgentProvider: null,
+  needsProviderSelection: true,
+  providerChoices: [
+    { provider: "claude-code", label: "Claude Code", available: true, selected: true },
+    { provider: "codex", label: "Codex", available: true, selected: false },
+  ],
   hasAnyTentacles: false,
   tentacleCount: 0,
   steps: [
@@ -89,6 +96,9 @@ const mockAppRequests = (
   resolveSetup: () => WorkspaceSetupSnapshot,
   options: {
     onEnsureGitignoreStep?: () => WorkspaceSetupSnapshot;
+    onProviderPatch?: (
+      defaultAgentProvider: unknown,
+    ) => WorkspaceSetupSnapshot | Promise<WorkspaceSetupSnapshot>;
   } = {},
 ) => {
   return vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
@@ -105,6 +115,15 @@ const mockAppRequests = (
 
     if (url.endsWith("/api/setup") && method === "GET") {
       return jsonResponse(resolveSetup());
+    }
+
+    if (url.endsWith("/api/setup") && method === "PATCH") {
+      const body =
+        typeof init?.body === "string" ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+      const setup = options.onProviderPatch
+        ? await options.onProviderPatch(body.defaultAgentProvider)
+        : resolveSetup();
+      return jsonResponse(setup);
     }
 
     if (url.endsWith("/api/setup/steps/ensure-gitignore") && method === "POST") {
@@ -212,6 +231,68 @@ describe("App workspace setup", () => {
       const gitignoreStep = screen.getByText("Ignore .octogent").closest(".workspace-setup-step");
       expect(gitignoreStep).not.toBeNull();
       expect(within(gitignoreStep as HTMLElement).getByText("Done")).toBeInTheDocument();
+    });
+  });
+
+  it("persists the selected default provider from the setup card", async () => {
+    let currentSetup = buildSetupSnapshot();
+    let resolveProviderPatch: () => void = () => {
+      throw new Error("Provider PATCH was not started.");
+    };
+    const fetchMock = mockAppRequests(() => currentSetup, {
+      onProviderPatch: (defaultAgentProvider) => {
+        return new Promise<WorkspaceSetupSnapshot>((resolve) => {
+          resolveProviderPatch = () => {
+            currentSetup = buildSetupSnapshot({
+              defaultAgentProvider: defaultAgentProvider === "codex" ? "codex" : "claude-code",
+              configuredAgentProvider: defaultAgentProvider === "codex" ? "codex" : "claude-code",
+              providerChoices: [
+                {
+                  provider: "claude-code",
+                  label: "Claude Code",
+                  available: true,
+                  selected: defaultAgentProvider !== "codex",
+                },
+                {
+                  provider: "codex",
+                  label: "Codex",
+                  available: true,
+                  selected: defaultAgentProvider === "codex",
+                },
+              ],
+            });
+            resolve(currentSetup);
+          };
+        });
+      },
+    });
+
+    render(<App />);
+
+    const setupCard = await screen.findByLabelText("Workspace setup");
+    fireEvent.click(within(setupCard).getByRole("button", { name: "Codex" }));
+
+    await waitFor(() => {
+      expect(within(setupCard).getByRole("button", { name: "Codex" })).toBeDisabled();
+      expect(within(setupCard).getByRole("button", { name: "Launch Agent" })).toBeDisabled();
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/setup",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ defaultAgentProvider: "codex" }),
+        }),
+      );
+    });
+
+    await act(async () => {
+      resolveProviderPatch();
+    });
+
+    await waitFor(() => {
+      expect(within(setupCard).getByRole("button", { name: "Launch Agent" })).not.toBeDisabled();
     });
   });
 });

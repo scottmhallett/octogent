@@ -130,7 +130,7 @@ export const useTerminalMutations = ({
           },
           body: JSON.stringify({
             workspaceMode,
-            agentProvider: agentProvider ?? "claude-code",
+            ...(agentProvider ? { agentProvider } : {}),
             ...(tentacleId ? { tentacleId } : {}),
           }),
         });

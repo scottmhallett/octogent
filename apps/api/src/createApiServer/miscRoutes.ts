@@ -1,4 +1,4 @@
-import type { WorkspaceSetupStepId } from "@octogent/core";
+import { type WorkspaceSetupStepId, isTerminalAgentProvider } from "@octogent/core";
 
 import {
   deleteUserPrompt,
@@ -12,6 +12,7 @@ import {
   ensureWorkspaceGitignore,
   initializeWorkspaceFiles,
   readWorkspaceSetupSnapshot,
+  setDefaultAgentProvider,
 } from "../setupStatus";
 import type { ApiRouteHandler } from "./routeHelpers";
 import {
@@ -28,6 +29,7 @@ const WORKSPACE_SETUP_STEP_PATH_PATTERN = /^\/api\/setup\/steps\/([^/]+)$/;
 const isWorkspaceSetupStepId = (value: string): value is WorkspaceSetupStepId =>
   value === "initialize-workspace" ||
   value === "ensure-gitignore" ||
+  value === "check-codex" ||
   value === "check-claude" ||
   value === "check-git" ||
   value === "check-curl" ||
@@ -38,13 +40,52 @@ export const handleWorkspaceSetupRoute: ApiRouteHandler = async (
   { workspaceCwd, projectStateDir },
 ) => {
   if (requestUrl.pathname === WORKSPACE_SETUP_PATH) {
+    if (request.method === "GET") {
+      writeJson(
+        response,
+        200,
+        readWorkspaceSetupSnapshot(workspaceCwd, projectStateDir),
+        corsOrigin,
+      );
+      return true;
+    }
+
+    if (request.method === "PATCH") {
+      const bodyReadResult = await readJsonBodyOrWriteError(request, response, corsOrigin);
+      if (!bodyReadResult.ok) {
+        return true;
+      }
+
+      const payload = bodyReadResult.payload;
+      const rawDefaultAgentProvider =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).defaultAgentProvider
+          : undefined;
+
+      if (!isTerminalAgentProvider(rawDefaultAgentProvider)) {
+        writeJson(
+          response,
+          400,
+          { error: "defaultAgentProvider must be either 'codex' or 'claude-code'." },
+          corsOrigin,
+        );
+        return true;
+      }
+
+      setDefaultAgentProvider(projectStateDir, rawDefaultAgentProvider);
+      writeJson(
+        response,
+        200,
+        readWorkspaceSetupSnapshot(workspaceCwd, projectStateDir),
+        corsOrigin,
+      );
+      return true;
+    }
+
     if (request.method !== "GET") {
       writeMethodNotAllowed(response, corsOrigin);
       return true;
     }
-
-    writeJson(response, 200, readWorkspaceSetupSnapshot(workspaceCwd, projectStateDir), corsOrigin);
-    return true;
   }
 
   const match = requestUrl.pathname.match(WORKSPACE_SETUP_STEP_PATH_PATTERN);
@@ -67,7 +108,12 @@ export const handleWorkspaceSetupRoute: ApiRouteHandler = async (
     initializeWorkspaceFiles(workspaceCwd, projectStateDir);
   } else if (stepId === "ensure-gitignore") {
     ensureWorkspaceGitignore(workspaceCwd);
-  } else if (stepId === "check-claude" || stepId === "check-git" || stepId === "check-curl") {
+  } else if (
+    stepId === "check-codex" ||
+    stepId === "check-claude" ||
+    stepId === "check-git" ||
+    stepId === "check-curl"
+  ) {
     markSetupStepVerified(projectStateDir, stepId);
   }
 

@@ -63,6 +63,7 @@ export const createTerminalRuntime = ({
   projectStateDir,
   gitClient = createDefaultGitClient(),
   getApiBaseUrl = () => process.env.OCTOGENT_API_ORIGIN ?? "http://127.0.0.1:8787",
+  getDefaultAgentProvider = () => DEFAULT_AGENT_PROVIDER,
   maxConcurrentSessions,
 }: CreateTerminalRuntimeOptions) => {
   const stateDir = projectStateDir ?? join(workspaceCwd, ".octogent");
@@ -457,7 +458,7 @@ export const createTerminalRuntime = ({
       ...(autoRenamePromptContext ? { autoRenamePromptContext } : {}),
       createdAt: new Date().toISOString(),
       workspaceMode,
-      agentProvider: agentProvider ?? DEFAULT_AGENT_PROVIDER,
+      agentProvider: agentProvider ?? getDefaultAgentProvider(),
       lifecycleState: "registered",
       lifecycleUpdatedAt: new Date().toISOString(),
       ...(initialPrompt ? { initialPrompt } : {}),
