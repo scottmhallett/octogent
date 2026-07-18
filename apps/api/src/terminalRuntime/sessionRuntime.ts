@@ -557,6 +557,9 @@ export const createSessionRuntime = ({
       provider,
       cwd: tentacleCwd,
       ...(terminalRecord?.initialPrompt ? { initialPrompt: terminalRecord.initialPrompt } : {}),
+      ...(terminalRecord?.initialInputDraft
+        ? { initialInputDraft: terminalRecord.initialInputDraft }
+        : {}),
       shellLaunch,
     });
 

@@ -18,6 +18,7 @@ type BuildAgentProviderLaunchOptions = {
   provider: TerminalAgentProvider;
   cwd: string;
   initialPrompt?: string;
+  initialInputDraft?: string;
   shellLaunch: ShellLaunch;
 };
 
@@ -30,9 +31,12 @@ export const buildAgentProviderLaunch = ({
   provider,
   cwd,
   initialPrompt,
+  initialInputDraft,
   shellLaunch,
 }: BuildAgentProviderLaunchOptions): AgentProviderLaunch => {
   if (provider === "codex") {
+    const promptArgument = initialPrompt ?? initialInputDraft;
+
     return {
       command: "codex",
       args: [
@@ -43,7 +47,7 @@ export const buildAgentProviderLaunch = ({
         "--ask-for-approval",
         "on-request",
         "--no-alt-screen",
-        ...(initialPrompt ? [initialPrompt] : []),
+        ...(promptArgument ? [promptArgument] : []),
       ],
       cwd,
       label: TERMINAL_AGENT_PROVIDER_LABELS.codex,

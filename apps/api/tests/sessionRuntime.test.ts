@@ -482,6 +482,53 @@ describe("createSessionRuntime", () => {
     runtime.close();
   });
 
+  it("launches Codex with the initial input draft when no prompt is provided", () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+          agentProvider: "codex",
+          initialInputDraft: "You are working on the Docs section.",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const pty = new FakePty();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+    const workspaceCwd = process.cwd();
+    spawnMock.mockReturnValue(pty);
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => workspaceCwd,
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+    });
+
+    expect(runtime.startSession(tentacleId)).toBe(true);
+
+    expect(spawnMock).toHaveBeenCalledWith(
+      "codex",
+      expect.arrayContaining(["You are working on the Docs section."]),
+      expect.objectContaining({ cwd: workspaceCwd }),
+    );
+    expect(pty.write).not.toHaveBeenCalled();
+
+    runtime.close();
+  });
+
   it("enforces the configured max concurrent terminal sessions before spawning", () => {
     const terminals = new Map<string, PersistedTerminal>([
       [
