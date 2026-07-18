@@ -14,12 +14,24 @@ export const handleCodeIntelEventsRoute: ApiRouteHandler = async (
     if (!body.ok) return true;
 
     const payload = body.payload as Record<string, unknown> | null;
-    const toolName = payload && typeof payload.tool_name === "string" ? payload.tool_name : "";
+    const toolName =
+      payload && typeof payload.tool_name === "string"
+        ? payload.tool_name
+        : payload && typeof payload.tool === "string"
+          ? payload.tool
+          : "";
     const toolInput =
       payload && typeof payload.tool_input === "object" && payload.tool_input !== null
         ? (payload.tool_input as Record<string, unknown>)
-        : {};
-    const filePath = typeof toolInput.file_path === "string" ? toolInput.file_path : "";
+        : payload && typeof payload.input === "object" && payload.input !== null
+          ? (payload.input as Record<string, unknown>)
+          : {};
+    const filePath =
+      typeof toolInput.file_path === "string"
+        ? toolInput.file_path
+        : typeof toolInput.path === "string"
+          ? toolInput.path
+          : "";
 
     if (filePath.length === 0) {
       writeJson(response, 200, { ok: true, skipped: true }, corsOrigin);

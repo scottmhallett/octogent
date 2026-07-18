@@ -1215,6 +1215,54 @@ describe("createApiServer", () => {
     );
   });
 
+  it("accepts Codex-specific hook callbacks", async () => {
+    const baseUrl = await startServer();
+
+    for (const hookName of ["permission-request", "post-tool-use"]) {
+      const hookResponse = await fetch(
+        `${baseUrl}/api/hooks/${hookName}?octogent_session=terminal-1`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tool_name: "apply_patch",
+            tool_input: { file_path: "README.md" },
+          }),
+        },
+      );
+      expect(hookResponse.status).toBe(200);
+      await expect(hookResponse.json()).resolves.toEqual({ ok: true });
+    }
+  });
+
+  it("records Codex-style post-tool-use code intel events", async () => {
+    const baseUrl = await startServer();
+
+    const eventResponse = await fetch(`${baseUrl}/api/code-intel/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Octogent-Session": "terminal-1",
+      },
+      body: JSON.stringify({ tool: "apply_patch", input: { path: "apps/api/src/server.ts" } }),
+    });
+    expect(eventResponse.status).toBe(200);
+
+    const listResponse = await fetch(`${baseUrl}/api/code-intel/events`, {
+      headers: { Accept: "application/json" },
+    });
+    expect(listResponse.status).toBe(200);
+    await expect(listResponse.json()).resolves.toEqual({
+      events: [
+        expect.objectContaining({
+          sessionId: "terminal-1",
+          tool: "apply_patch",
+          file: "apps/api/src/server.ts",
+        }),
+      ],
+    });
+  });
+
   it("returns 405 for unsupported methods on /api/github/summary", async () => {
     const baseUrl = await startServer({
       readGithubRepoSummary: async () => ({
@@ -1278,6 +1326,7 @@ describe("createApiServer", () => {
     expect(existsSync(join(workspaceCwd, ".octogent", "project.json"))).toBe(true);
     expect(existsSync(join(workspaceCwd, ".octogent", "tentacles"))).toBe(true);
     expect(existsSync(join(workspaceCwd, ".octogent", "worktrees"))).toBe(true);
+    expect(existsSync(join(workspaceCwd, ".codex", "hooks.json"))).toBe(true);
 
     const gitignoreResponse = await fetch(`${baseUrl}/api/setup/steps/ensure-gitignore`, {
       method: "POST",
@@ -1923,6 +1972,7 @@ describe("createApiServer", () => {
       }),
     });
     expect(createResponse.status).toBe(201);
+    expect(existsSync(join(workspaceCwd, ".codex", "hooks.json"))).toBe(true);
 
     const snapshotsResponse = await fetch(`${baseUrl}/api/terminal-snapshots`, {
       headers: { Accept: "application/json" },

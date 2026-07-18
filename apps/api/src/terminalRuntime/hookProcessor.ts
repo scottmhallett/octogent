@@ -3,6 +3,7 @@ import { join } from "node:path";
 
 import { logVerbose } from "../logging";
 import { parseClaudeTranscript } from "./claudeTranscript";
+import { installCodexHooksInDirectory } from "./codexHooks";
 import { storeClaudeTranscriptTurns } from "./conversations";
 import { broadcastMessage } from "./protocol";
 import type { PersistedTerminal, TerminalSession } from "./types";
@@ -200,6 +201,14 @@ export const createHookProcessor = (deps: {
     }
   };
 
+  const installCodexHooksInDirectoryForRuntime = (targetCwd: string) => {
+    try {
+      installCodexHooksInDirectory(targetCwd, getApiBaseUrl());
+    } catch {
+      // Best-effort
+    }
+  };
+
   const handleHook = (
     hookName: string,
     payload: unknown,
@@ -282,6 +291,52 @@ export const createHookProcessor = (deps: {
       return { ok: true };
     }
 
+    if (hookName === "permission-request") {
+      if (!octogentSessionId) {
+        return { ok: true };
+      }
+      const session = sessions.get(octogentSessionId);
+      if (!session) {
+        return { ok: true };
+      }
+
+      session.agentState = "waiting_for_permission";
+      session.stateTracker.forceState("waiting_for_permission");
+      onStateChange?.(octogentSessionId, "waiting_for_permission", session.lastToolName);
+      broadcastMessage(session, {
+        type: "state",
+        state: "waiting_for_permission",
+        ...(session.lastToolName ? { toolName: session.lastToolName } : {}),
+      });
+      return { ok: true };
+    }
+
+    if (hookName === "post-tool-use") {
+      if (!octogentSessionId) {
+        return { ok: true };
+      }
+      const session = sessions.get(octogentSessionId);
+      if (!session) {
+        return { ok: true };
+      }
+
+      const toolName =
+        typeof hookPayloadRecord.tool_name === "string"
+          ? hookPayloadRecord.tool_name
+          : typeof hookPayloadRecord.tool === "string"
+            ? hookPayloadRecord.tool
+            : null;
+
+      logVerbose(`[Hook] post-tool-use: tool=${toolName} session=${octogentSessionId}`);
+
+      session.lastToolName = undefined;
+      session.agentState = "processing";
+      session.stateTracker.forceState("processing");
+      onStateChange?.(octogentSessionId, "processing");
+      broadcastMessage(session, { type: "state", state: "processing" });
+      return { ok: true };
+    }
+
     if (hookName === "user-prompt-submit") {
       if (!octogentSessionId) {
         return { ok: true };
@@ -340,6 +395,21 @@ export const createHookProcessor = (deps: {
     const hookCwd = typeof hookPayload.cwd === "string" ? hookPayload.cwd : null;
 
     logVerbose(`[Hook] Stop hook: transcriptPath=${transcriptPath}, hookCwd=${hookCwd}`);
+
+    if (!transcriptPath && !hookCwd && octogentSessionId && sessions.has(octogentSessionId)) {
+      const session = sessions.get(octogentSessionId);
+      if (session) {
+        session.agentState = "idle";
+        session.stateTracker.forceState("idle");
+        onStateChange?.(octogentSessionId, "idle");
+        broadcastMessage(session, { type: "state", state: "idle" });
+      }
+      const deliveredMessageCount = deliverChannelMessages(octogentSessionId);
+      if (deliveredMessageCount === 0) {
+        releaseSessionKeepAlive(octogentSessionId);
+      }
+      return { ok: true };
+    }
 
     if (!transcriptPath || !hookCwd) {
       logVerbose("[Hook] Missing transcriptPath or hookCwd, skipping.");
@@ -406,5 +476,9 @@ export const createHookProcessor = (deps: {
     return { ok: true };
   };
 
-  return { handleHook, installHooksInDirectory };
+  return {
+    handleHook,
+    installHooksInDirectory,
+    installCodexHooksInDirectory: installCodexHooksInDirectoryForRuntime,
+  };
 };
