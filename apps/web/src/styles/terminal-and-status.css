@@ -83,6 +83,18 @@
   min-width: 0;
 }
 
+.terminal-provider-badge {
+  flex-shrink: 0;
+  margin-left: 0.35rem;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 0.58rem;
+  font-weight: 800;
+  line-height: 1.25;
+  opacity: 0.8;
+}
+
 .terminal-prompt-banner {
   display: inline-flex;
   align-items: center;

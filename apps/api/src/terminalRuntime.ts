@@ -337,6 +337,7 @@ export const createTerminalRuntime = ({
       tentacleId: terminal.tentacleId,
       tentacleName: terminal.tentacleName,
       workspaceMode: terminal.workspaceMode,
+      ...(terminal.agentProvider ? { agentProvider: terminal.agentProvider } : {}),
       createdAt: terminal.createdAt,
       hasUserPrompt: isTerminalRecentlyActive(terminal),
       ...(terminal.parentTerminalId ? { parentTerminalId: terminal.parentTerminalId } : {}),

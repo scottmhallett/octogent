@@ -1916,7 +1916,11 @@ describe("createApiServer", () => {
         Accept: "application/json",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: "planner", initialPrompt: "Start working." }),
+      body: JSON.stringify({
+        name: "planner",
+        initialPrompt: "Start working.",
+        agentProvider: "codex",
+      }),
     });
     expect(createResponse.status).toBe(201);
 
@@ -1928,6 +1932,7 @@ describe("createApiServer", () => {
       expect.arrayContaining([
         expect.objectContaining({
           terminalId: "terminal-1",
+          agentProvider: "codex",
           hasUserPrompt: true,
         }),
       ]),

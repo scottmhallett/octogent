@@ -90,6 +90,7 @@ export const CanvasTerminalColumn = ({
         <Terminal
           terminalId={node.sessionId}
           terminalLabel={node.label}
+          {...(terminal?.agentProvider ? { agentProvider: terminal.agentProvider } : {})}
           {...(layoutVersion === undefined ? {} : { layoutVersion })}
           onAgentRuntimeStateChange={setAgentState}
           {...(onTerminalRenamed ? { onTerminalRenamed } : {})}
