@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const CODEX_HOOK_EVENTS = [
@@ -30,13 +30,16 @@ type CodexHooksConfig = {
   hooks: CodexHooksByEvent;
 };
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
 const parseHooksConfig = (fileContents: string): Record<string, unknown> | null => {
   try {
     const parsed = JSON.parse(fileContents) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    if (!isRecord(parsed)) {
       return null;
     }
-    return parsed as Record<string, unknown>;
+    return parsed;
   } catch {
     return null;
   }
@@ -133,6 +136,60 @@ export const buildCodexHooksConfig = (apiBaseUrl: string): CodexHooksConfig => (
 
 export const getCodexHooksPath = (targetCwd: string) => join(targetCwd, ".codex", "hooks.json");
 
+const isOctogentCommandHook = (hook: unknown): boolean => {
+  if (!isRecord(hook) || hook.type !== "command" || typeof hook.command !== "string") {
+    return false;
+  }
+
+  return (
+    hook.command.includes("/api/hooks/") ||
+    hook.command.includes("/api/code-intel/events") ||
+    hook.command.includes("X-Octogent-Session") ||
+    hook.command.includes("OCTOGENT_SESSION_ID")
+  );
+};
+
+const preserveNonOctogentEntry = (entry: unknown): unknown | null => {
+  if (!isRecord(entry) || !Array.isArray(entry.hooks)) {
+    return entry;
+  }
+
+  const hooks = entry.hooks.filter((hook) => !isOctogentCommandHook(hook));
+  if (hooks.length === 0) {
+    return null;
+  }
+
+  return { ...entry, hooks };
+};
+
+export const mergeCodexHooksConfig = (
+  existingConfig: Record<string, unknown> | null,
+  apiBaseUrl: string,
+): Record<string, unknown> => {
+  const managedConfig = buildCodexHooksConfig(apiBaseUrl);
+  const existingHooks = isRecord(existingConfig?.hooks) ? existingConfig.hooks : {};
+  const nextHooks: Record<string, unknown> = { ...existingHooks };
+
+  for (const eventName of CODEX_HOOK_EVENTS) {
+    const existingEntries = Array.isArray(existingHooks[eventName]) ? existingHooks[eventName] : [];
+    const preservedEntries = existingEntries
+      .map((entry) => preserveNonOctogentEntry(entry))
+      .filter((entry): entry is unknown => entry !== null);
+    nextHooks[eventName] = [...preservedEntries, ...managedConfig.hooks[eventName]];
+  }
+
+  return {
+    ...(existingConfig ?? {}),
+    hooks: nextHooks,
+  };
+};
+
+const backupMalformedHooksConfig = (hooksPath: string) => {
+  const backupPath = `${hooksPath}.invalid-${Date.now()}.bak`;
+  copyFileSync(hooksPath, backupPath);
+  return backupPath;
+};
+
 export const hasOctogentCodexHooks = (targetCwd: string): boolean => {
   const hooksPath = getCodexHooksPath(targetCwd);
   if (!existsSync(hooksPath)) {
@@ -158,5 +215,16 @@ export const installCodexHooksInDirectory = (targetCwd: string, apiBaseUrl: stri
   const targetCodexDir = join(targetCwd, ".codex");
   const targetHooksPath = getCodexHooksPath(targetCwd);
   mkdirSync(targetCodexDir, { recursive: true });
-  writeFileSync(targetHooksPath, `${JSON.stringify(buildCodexHooksConfig(apiBaseUrl), null, 2)}\n`);
+
+  const existingConfig = existsSync(targetHooksPath)
+    ? parseHooksConfig(readFileSync(targetHooksPath, "utf8"))
+    : null;
+  if (existsSync(targetHooksPath) && existingConfig === null) {
+    backupMalformedHooksConfig(targetHooksPath);
+  }
+
+  writeFileSync(
+    targetHooksPath,
+    `${JSON.stringify(mergeCodexHooksConfig(existingConfig, apiBaseUrl), null, 2)}\n`,
+  );
 };

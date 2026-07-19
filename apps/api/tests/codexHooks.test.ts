@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -8,6 +16,7 @@ import {
   getCodexHooksPath,
   hasOctogentCodexHooks,
   installCodexHooksInDirectory,
+  mergeCodexHooksConfig,
 } from "../src/terminalRuntime/codexHooks";
 
 describe("Codex hook config", () => {
@@ -57,5 +66,119 @@ describe("Codex hook config", () => {
     const hooks = hooksConfig.hooks as Record<string, unknown>;
     expect(hooks.SessionStart).toBeDefined();
     expect(hooks.Stop).toBeDefined();
+  });
+
+  it("preserves existing non-Octogent hooks and top-level settings when installing", () => {
+    const workspaceCwd = createTemporaryDirectory();
+    mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });
+    const hooksPath = getCodexHooksPath(workspaceCwd);
+    const userHook = {
+      matcher: "Read",
+      hooks: [
+        {
+          type: "command",
+          command: "node ./scripts/audit-read.js",
+          timeout: 3,
+        },
+      ],
+    };
+
+    writeFileSync(
+      hooksPath,
+      `${JSON.stringify(
+        {
+          customSetting: true,
+          hooks: {
+            PreToolUse: [userHook],
+            Notification: [
+              {
+                matcher: "*",
+                hooks: [{ type: "command", command: "node ./scripts/notify.js", timeout: 5 }],
+              },
+            ],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    installCodexHooksInDirectory(workspaceCwd, "http://127.0.0.1:8787");
+
+    const hooksConfig = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, unknown>;
+    const hooks = hooksConfig.hooks as Record<string, unknown>;
+    expect(hooksConfig.customSetting).toBe(true);
+    expect(hooks.PreToolUse).toEqual(expect.arrayContaining([userHook]));
+    expect(hooks.Notification).toEqual([
+      {
+        matcher: "*",
+        hooks: [{ type: "command", command: "node ./scripts/notify.js", timeout: 5 }],
+      },
+    ]);
+    expect(hooks.SessionStart).toBeDefined();
+  });
+
+  it("replaces previous Octogent hooks instead of duplicating them", () => {
+    const workspaceCwd = createTemporaryDirectory();
+    mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });
+    const hooksPath = getCodexHooksPath(workspaceCwd);
+
+    installCodexHooksInDirectory(workspaceCwd, "http://127.0.0.1:8787");
+    installCodexHooksInDirectory(workspaceCwd, "http://127.0.0.1:9000");
+
+    const hooksConfig = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, unknown>;
+    const hooks = hooksConfig.hooks as Record<string, unknown[]>;
+    const postToolUseEntries = hooks.PostToolUse ?? [];
+    const postToolUseCommands = postToolUseEntries.flatMap((entry) => {
+      const record = entry as { hooks?: Array<{ command?: string }> };
+      return record.hooks?.map((hook) => hook.command ?? "") ?? [];
+    });
+
+    expect(postToolUseEntries).toHaveLength(1);
+    expect(postToolUseCommands).toHaveLength(1);
+    expect(postToolUseCommands[0]).toContain("http://127.0.0.1:9000");
+    expect(postToolUseCommands[0]).not.toContain("http://127.0.0.1:8787");
+  });
+
+  it("backs up malformed hooks config before replacing it", () => {
+    const workspaceCwd = createTemporaryDirectory();
+    mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });
+    const hooksPath = getCodexHooksPath(workspaceCwd);
+    writeFileSync(hooksPath, "{ invalid json");
+
+    installCodexHooksInDirectory(workspaceCwd, "http://127.0.0.1:8787");
+
+    const codexDir = join(workspaceCwd, ".codex");
+    const backupFile = readdirSync(codexDir).find((file) => file.startsWith("hooks.json.invalid-"));
+    expect(backupFile).toBeDefined();
+    expect(readFileSync(join(codexDir, backupFile as string), "utf8")).toBe("{ invalid json");
+    expect(hasOctogentCodexHooks(workspaceCwd)).toBe(true);
+  });
+
+  it("merges Octogent hooks into parsed configs without mutating unrelated events", () => {
+    const merged = mergeCodexHooksConfig(
+      {
+        hooks: {
+          Stop: [
+            {
+              matcher: "user-stop",
+              hooks: [{ type: "command", command: "node ./stop.js", timeout: 1 }],
+            },
+          ],
+        },
+      },
+      "http://127.0.0.1:8787",
+    );
+
+    const hooks = merged.hooks as Record<string, unknown>;
+    expect(hooks.Stop).toEqual(
+      expect.arrayContaining([
+        {
+          matcher: "user-stop",
+          hooks: [{ type: "command", command: "node ./stop.js", timeout: 1 }],
+        },
+      ]),
+    );
+    expect(hooks.SessionStart).toBeDefined();
   });
 });
