@@ -93,9 +93,10 @@ export const WorkspaceSetupCard = ({
       {(workspaceSetup?.steps ?? []).map((step) => {
         const isCreateTentaclesStep = step.id === "create-tentacles";
         const buttonLabel = isCreateTentaclesStep ? "Launch Agent" : step.actionLabel;
+        const isProviderCheckStep = step.id === "check-claude" || step.id === "check-codex";
         const isButtonDisabled = isCreateTentaclesStep
           ? isLaunchingAgent || isSavingProvider
-          : isLoading;
+          : isLoading || (isProviderCheckStep && Boolean(step.command));
         const isButtonRunning = isCreateTentaclesStep
           ? isLaunchingAgent
           : isRunningStepId === step.id;

@@ -110,12 +110,10 @@ export const handleWorkspaceSetupRoute: ApiRouteHandler = async (
     installCodexHooksInDirectory(workspaceCwd, getApiBaseUrl());
   } else if (stepId === "ensure-gitignore") {
     ensureWorkspaceGitignore(workspaceCwd);
-  } else if (
-    stepId === "check-codex" ||
-    stepId === "check-claude" ||
-    stepId === "check-git" ||
-    stepId === "check-curl"
-  ) {
+  } else if (stepId === "check-codex") {
+    installCodexHooksInDirectory(workspaceCwd, getApiBaseUrl());
+    markSetupStepVerified(projectStateDir, stepId);
+  } else if (stepId === "check-claude" || stepId === "check-git" || stepId === "check-curl") {
     markSetupStepVerified(projectStateDir, stepId);
   }
 

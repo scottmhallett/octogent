@@ -516,10 +516,12 @@ describe("readClaudeUsageSnapshot", () => {
 
     resetCliSession();
 
+    let refreshResolved = false;
     const fetchMock = vi.fn<typeof fetch>().mockImplementation(
       async () =>
         await new Promise<Response>((resolve) => {
           setTimeout(() => {
+            refreshResolved = true;
             resolve(
               new Response(usageResponseBody, {
                 status: 200,
@@ -530,7 +532,6 @@ describe("readClaudeUsageSnapshot", () => {
         }),
     );
 
-    const startedAt = Date.now();
     const snapshot = await readClaudeUsageSnapshot({
       now: () => new Date("2026-03-03T12:05:00.000Z"),
       projectStateDir,
@@ -543,7 +544,7 @@ describe("readClaudeUsageSnapshot", () => {
     expect(snapshot.status).toBe("ok");
     expect(snapshot.source).toBe("oauth-api");
     expect(snapshot.primaryUsedPercent).toBe(14);
-    expect(Date.now() - startedAt).toBeLessThan(40);
+    expect(refreshResolved).toBe(false);
 
     await new Promise((resolve) => setTimeout(resolve, 90));
     expect(fetchMock).toHaveBeenCalledTimes(1);

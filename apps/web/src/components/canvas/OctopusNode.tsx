@@ -124,6 +124,15 @@ const GLYPH_SCALE = 4;
 const GLYPH_W = 112;
 const GLYPH_H = 120;
 
+export const getOctopusNodeGlyphMetrics = (node: GraphNode) => {
+  const glyphScale = node.type === "octoboss" ? 6 : GLYPH_SCALE;
+  return {
+    glyphScale,
+    glyphW: Math.round(GLYPH_W * (glyphScale / GLYPH_SCALE)),
+    glyphH: Math.round(GLYPH_H * (glyphScale / GLYPH_SCALE)),
+  };
+};
+
 const isEdgeActivityVisible = (target: GraphNode): boolean =>
   target.type === "active-session" &&
   target.hasUserPrompt !== false &&
@@ -180,6 +189,29 @@ const renderEdgeActivityDots = (path: string, color: string, keyPrefix: string) 
     </circle>,
   ]);
 
+export const OctopusNodeGlyph = ({ node }: { node: GraphNode }) => {
+  const isOctoboss = node.type === "octoboss";
+  const visuals = useMemo(
+    () =>
+      isOctoboss
+        ? ({ animation: "sway", expression: "normal", accessory: "none" } as OctopusVisuals)
+        : deriveOctopusVisuals(node),
+    [node, isOctoboss],
+  );
+  const { glyphScale } = getOctopusNodeGlyphMetrics(node);
+
+  return (
+    <OctopusGlyph
+      {...(isOctoboss ? {} : { color: node.color })}
+      animation={visuals.animation}
+      expression={visuals.expression}
+      accessory={visuals.accessory}
+      {...(visuals.hairColor ? { hairColor: visuals.hairColor } : {})}
+      scale={glyphScale}
+    />
+  );
+};
+
 export const OctopusNode = ({
   node,
   connectedNodes,
@@ -192,16 +224,7 @@ export const OctopusNode = ({
   const showFocus = isSelected;
   const isOctoboss = node.type === "octoboss";
   const lines = useMemo(() => splitLabel(node.label), [node.label]);
-  const visuals = useMemo(
-    () =>
-      isOctoboss
-        ? ({ animation: "sway", expression: "normal", accessory: "none" } as OctopusVisuals)
-        : deriveOctopusVisuals(node),
-    [node, isOctoboss],
-  );
-  const glyphScale = isOctoboss ? 6 : GLYPH_SCALE;
-  const glyphW = Math.round(GLYPH_W * (glyphScale / GLYPH_SCALE));
-  const glyphH = Math.round(GLYPH_H * (glyphScale / GLYPH_SCALE));
+  const { glyphW, glyphH } = getOctopusNodeGlyphMetrics(node);
   const color = node.color;
 
   return (
@@ -256,35 +279,6 @@ export const OctopusNode = ({
 
       {/* Focused glow — same style as session nodes */}
       {showFocus && <circle className="canvas-node-focus-glow" r={node.radius - 4} fill={color} />}
-
-      {/* Octopus glyph via foreignObject */}
-      <foreignObject
-        x={-glyphW / 2}
-        y={-glyphH / 2}
-        width={glyphW}
-        height={glyphH}
-        style={{ overflow: "visible", pointerEvents: "none" }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            width: "100%",
-            height: "100%",
-            pointerEvents: "none",
-          }}
-        >
-          <OctopusGlyph
-            {...(isOctoboss ? {} : { color })}
-            animation={visuals.animation}
-            expression={visuals.expression}
-            accessory={visuals.accessory}
-            {...(visuals.hairColor ? { hairColor: visuals.hairColor } : {})}
-            scale={glyphScale}
-          />
-        </div>
-      </foreignObject>
 
       {/* Label — always visible, up to two lines */}
       <text

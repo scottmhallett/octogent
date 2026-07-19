@@ -1370,6 +1370,29 @@ describe("createApiServer", () => {
     );
   });
 
+  it("installs Codex hooks when checking Codex in an already initialized workspace", async () => {
+    const workspaceCwd = mkdtempSync(join(tmpdir(), "octogent-api-test-"));
+    temporaryDirectories.push(workspaceCwd);
+    mkdirSync(join(workspaceCwd, ".octogent", "tentacles"), { recursive: true });
+    mkdirSync(join(workspaceCwd, ".octogent", "worktrees"), { recursive: true });
+    mkdirSync(join(workspaceCwd, ".octogent", "state"), { recursive: true });
+    writeFileSync(
+      join(workspaceCwd, ".octogent", "project.json"),
+      JSON.stringify({ version: 1, defaultAgentProvider: "codex" }),
+    );
+
+    const baseUrl = await startServer({ workspaceCwd });
+    expect(existsSync(join(workspaceCwd, ".codex", "hooks.json"))).toBe(false);
+
+    const response = await fetch(`${baseUrl}/api/setup/steps/check-codex`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(existsSync(join(workspaceCwd, ".codex", "hooks.json"))).toBe(true);
+  });
+
   it("returns 413 when create tentacle body exceeds size limit", async () => {
     const baseUrl = await startServer();
 

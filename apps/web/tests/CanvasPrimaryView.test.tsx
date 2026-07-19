@@ -103,6 +103,8 @@ vi.mock("../src/components/canvas/SessionNode", () => ({
 }));
 
 vi.mock("../src/components/canvas/OctopusNode", () => ({
+  getOctopusNodeGlyphMetrics: () => ({ glyphScale: 4, glyphW: 112, glyphH: 120 }),
+  OctopusNodeGlyph: () => <canvas />,
   OctopusNode: ({
     node,
     onClick,

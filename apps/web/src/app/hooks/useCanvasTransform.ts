@@ -10,6 +10,7 @@ type CanvasTransform = {
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 3.0;
 const ZOOM_FACTOR = 0.1;
+const INITIAL_PADDING = 40;
 
 type UseCanvasTransformResult = {
   transform: CanvasTransform;
@@ -24,6 +25,18 @@ type UseCanvasTransformResult = {
   zoomIn: () => void;
   zoomOut: () => void;
   fitAll: (nodes: { x: number; y: number }[]) => void;
+};
+
+const buildInitialTransform = (width: number, height: number): CanvasTransform => {
+  const scaleX = (width - INITIAL_PADDING * 2) / WORLD_W;
+  const scaleY = (height - INITIAL_PADDING * 2) / WORLD_H;
+  const scale = Math.min(scaleX, scaleY);
+
+  return {
+    scale,
+    translateX: width / 2,
+    translateY: height / 2,
+  };
 };
 
 export const useCanvasTransform = (): UseCanvasTransformResult => {
@@ -44,16 +57,7 @@ export const useCanvasTransform = (): UseCanvasTransformResult => {
     if (rect.width === 0 || rect.height === 0) return;
     centeredRef.current = true;
 
-    const padding = 40;
-    const scaleX = (rect.width - padding * 2) / WORLD_W;
-    const scaleY = (rect.height - padding * 2) / WORLD_H;
-    const scale = Math.min(scaleX, scaleY);
-
-    setTransform({
-      scale,
-      translateX: rect.width / 2,
-      translateY: rect.height / 2,
-    });
+    setTransform(buildInitialTransform(rect.width, rect.height));
   });
 
   // Re-center the graph when the SVG container resizes (e.g. split panel opens)
@@ -69,6 +73,13 @@ export const useCanvasTransform = (): UseCanvasTransformResult => {
       if (width === 0 || height === 0) return;
 
       const prev = prevSizeRef.current;
+      if (!centeredRef.current) {
+        centeredRef.current = true;
+        prevSizeRef.current = { width, height };
+        setTransform(buildInitialTransform(width, height));
+        return;
+      }
+
       if (prev && (Math.abs(prev.width - width) > 1 || Math.abs(prev.height - height) > 1)) {
         // Adjust translate so the graph center stays in the center of the new viewport
         setTransform((t) => ({
