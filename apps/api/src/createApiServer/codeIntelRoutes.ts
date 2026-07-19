@@ -1,6 +1,39 @@
 import type { ApiRouteHandler } from "./routeHelpers";
 import { readJsonBodyOrWriteError, writeJson, writeMethodNotAllowed } from "./routeHelpers";
 
+const extractApplyPatchFilePaths = (command: string): string[] => {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+
+  for (const line of command.split(/\r?\n/)) {
+    const match = line.match(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/);
+    if (!match) continue;
+
+    const filePath = match[1]?.trim();
+    if (!filePath || seen.has(filePath)) continue;
+    seen.add(filePath);
+    paths.push(filePath);
+  }
+
+  return paths;
+};
+
+const extractFilePaths = (toolName: string, toolInput: Record<string, unknown>): string[] => {
+  if (typeof toolInput.file_path === "string" && toolInput.file_path.length > 0) {
+    return [toolInput.file_path];
+  }
+
+  if (typeof toolInput.path === "string" && toolInput.path.length > 0) {
+    return [toolInput.path];
+  }
+
+  if (toolName === "apply_patch" && typeof toolInput.command === "string") {
+    return extractApplyPatchFilePaths(toolInput.command);
+  }
+
+  return [];
+};
+
 export const handleCodeIntelEventsRoute: ApiRouteHandler = async (
   { request, response, requestUrl, corsOrigin },
   { codeIntelStore },
@@ -26,14 +59,9 @@ export const handleCodeIntelEventsRoute: ApiRouteHandler = async (
         : payload && typeof payload.input === "object" && payload.input !== null
           ? (payload.input as Record<string, unknown>)
           : {};
-    const filePath =
-      typeof toolInput.file_path === "string"
-        ? toolInput.file_path
-        : typeof toolInput.path === "string"
-          ? toolInput.path
-          : "";
+    const filePaths = extractFilePaths(toolName, toolInput);
 
-    if (filePath.length === 0) {
+    if (filePaths.length === 0) {
       writeJson(response, 200, { ok: true, skipped: true }, corsOrigin);
       return true;
     }
@@ -50,12 +78,14 @@ export const handleCodeIntelEventsRoute: ApiRouteHandler = async (
         : undefined;
     const sessionId = octogentSession ?? claudeSession ?? "unknown";
 
-    await codeIntelStore.append({
-      ts: new Date().toISOString(),
-      sessionId,
-      tool: toolName,
-      file: filePath,
-    });
+    for (const filePath of filePaths) {
+      await codeIntelStore.append({
+        ts: new Date().toISOString(),
+        sessionId,
+        tool: toolName,
+        file: filePath,
+      });
+    }
 
     writeJson(response, 200, { ok: true }, corsOrigin);
     return true;

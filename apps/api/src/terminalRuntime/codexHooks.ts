@@ -24,7 +24,11 @@ type CodexHookEntry = {
   hooks: CodexCommandHook[];
 };
 
-type CodexHooksConfig = Record<CodexHookEventName, CodexHookEntry[]>;
+type CodexHooksByEvent = Record<CodexHookEventName, CodexHookEntry[]>;
+
+type CodexHooksConfig = {
+  hooks: CodexHooksByEvent;
+};
 
 const parseHooksConfig = (fileContents: string): Record<string, unknown> | null => {
   try {
@@ -45,84 +49,86 @@ const codeIntelCommand = (apiBaseUrl: string) =>
   `curl -s -X POST "${apiBaseUrl}/api/code-intel/events" -H "X-Octogent-Session: $OCTOGENT_SESSION_ID" -H 'Content-Type: application/json' -d @- || true`;
 
 export const buildCodexHooksConfig = (apiBaseUrl: string): CodexHooksConfig => ({
-  SessionStart: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: hookCommand(apiBaseUrl, "session-start"),
-          timeout: 5,
-          statusMessage: "Notifying Octogent",
-        },
-      ],
-    },
-  ],
-  UserPromptSubmit: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: hookCommand(apiBaseUrl, "user-prompt-submit"),
-          timeout: 5,
-          statusMessage: "Updating Octogent activity",
-        },
-      ],
-    },
-  ],
-  PreToolUse: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: hookCommand(apiBaseUrl, "pre-tool-use"),
-          timeout: 5,
-          statusMessage: "Updating Octogent tool state",
-        },
-      ],
-    },
-  ],
-  PermissionRequest: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: hookCommand(apiBaseUrl, "permission-request"),
-          timeout: 5,
-          statusMessage: "Updating Octogent approval state",
-        },
-      ],
-    },
-  ],
-  PostToolUse: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: codeIntelCommand(apiBaseUrl),
-          timeout: 5,
-          statusMessage: "Updating Octogent code intel",
-        },
-      ],
-    },
-  ],
-  Stop: [
-    {
-      matcher: "*",
-      hooks: [
-        {
-          type: "command",
-          command: hookCommand(apiBaseUrl, "stop"),
-          timeout: 15,
-          statusMessage: "Completing Octogent turn",
-        },
-      ],
-    },
-  ],
+  hooks: {
+    SessionStart: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(apiBaseUrl, "session-start"),
+            timeout: 5,
+            statusMessage: "Notifying Octogent",
+          },
+        ],
+      },
+    ],
+    UserPromptSubmit: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(apiBaseUrl, "user-prompt-submit"),
+            timeout: 5,
+            statusMessage: "Updating Octogent activity",
+          },
+        ],
+      },
+    ],
+    PreToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(apiBaseUrl, "pre-tool-use"),
+            timeout: 5,
+            statusMessage: "Updating Octogent tool state",
+          },
+        ],
+      },
+    ],
+    PermissionRequest: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(apiBaseUrl, "permission-request"),
+            timeout: 5,
+            statusMessage: "Updating Octogent approval state",
+          },
+        ],
+      },
+    ],
+    PostToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: codeIntelCommand(apiBaseUrl),
+            timeout: 5,
+            statusMessage: "Updating Octogent code intel",
+          },
+        ],
+      },
+    ],
+    Stop: [
+      {
+        matcher: "*",
+        hooks: [
+          {
+            type: "command",
+            command: hookCommand(apiBaseUrl, "stop"),
+            timeout: 15,
+            statusMessage: "Completing Octogent turn",
+          },
+        ],
+      },
+    ],
+  },
 });
 
 export const getCodexHooksPath = (targetCwd: string) => join(targetCwd, ".codex", "hooks.json");
@@ -138,7 +144,14 @@ export const hasOctogentCodexHooks = (targetCwd: string): boolean => {
     return false;
   }
 
-  return CODEX_HOOK_EVENTS.every((eventName) => Array.isArray(hooksConfig[eventName]));
+  const hooks = hooksConfig.hooks;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
+    return false;
+  }
+
+  return CODEX_HOOK_EVENTS.every((eventName) =>
+    Array.isArray((hooks as Record<string, unknown>)[eventName]),
+  );
 };
 
 export const installCodexHooksInDirectory = (targetCwd: string, apiBaseUrl: string) => {

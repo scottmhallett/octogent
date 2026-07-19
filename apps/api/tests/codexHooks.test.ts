@@ -29,7 +29,7 @@ describe("Codex hook config", () => {
   it("builds Octogent lifecycle hooks for Codex events", () => {
     const config = buildCodexHooksConfig("http://127.0.0.1:8787");
 
-    expect(Object.keys(config)).toEqual([
+    expect(Object.keys(config.hooks)).toEqual([
       "SessionStart",
       "UserPromptSubmit",
       "PreToolUse",
@@ -37,11 +37,11 @@ describe("Codex hook config", () => {
       "PostToolUse",
       "Stop",
     ]);
-    expect(config.PermissionRequest[0]?.hooks[0]?.command).toContain(
+    expect(config.hooks.PermissionRequest[0]?.hooks[0]?.command).toContain(
       "/api/hooks/permission-request",
     );
-    expect(config.PostToolUse[0]?.hooks[0]?.command).toContain("/api/code-intel/events");
-    expect(config.PostToolUse[0]?.hooks[0]?.command).toContain("X-Octogent-Session");
+    expect(config.hooks.PostToolUse[0]?.hooks[0]?.command).toContain("/api/code-intel/events");
+    expect(config.hooks.PostToolUse[0]?.hooks[0]?.command).toContain("X-Octogent-Session");
   });
 
   it("installs project hooks.json and detects it later", () => {
@@ -54,7 +54,8 @@ describe("Codex hook config", () => {
     expect(hasOctogentCodexHooks(workspaceCwd)).toBe(true);
 
     const hooksConfig = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, unknown>;
-    expect(hooksConfig.SessionStart).toBeDefined();
-    expect(hooksConfig.Stop).toBeDefined();
+    const hooks = hooksConfig.hooks as Record<string, unknown>;
+    expect(hooks.SessionStart).toBeDefined();
+    expect(hooks.Stop).toBeDefined();
   });
 });

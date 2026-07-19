@@ -1263,6 +1263,53 @@ describe("createApiServer", () => {
     });
   });
 
+  it("extracts code intel file paths from Codex apply_patch commands", async () => {
+    const baseUrl = await startServer();
+
+    const eventResponse = await fetch(`${baseUrl}/api/code-intel/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Octogent-Session": "terminal-1",
+      },
+      body: JSON.stringify({
+        tool_name: "apply_patch",
+        tool_input: {
+          command: [
+            "*** Begin Patch",
+            "*** Update File: apps/api/src/server.ts",
+            "@@",
+            "-old",
+            "+new",
+            "*** Add File: apps/api/src/new-file.ts",
+            "+export {};",
+            "*** End Patch",
+          ].join("\n"),
+        },
+      }),
+    });
+    expect(eventResponse.status).toBe(200);
+
+    const listResponse = await fetch(`${baseUrl}/api/code-intel/events`, {
+      headers: { Accept: "application/json" },
+    });
+    expect(listResponse.status).toBe(200);
+    await expect(listResponse.json()).resolves.toEqual({
+      events: [
+        expect.objectContaining({
+          sessionId: "terminal-1",
+          tool: "apply_patch",
+          file: "apps/api/src/server.ts",
+        }),
+        expect.objectContaining({
+          sessionId: "terminal-1",
+          tool: "apply_patch",
+          file: "apps/api/src/new-file.ts",
+        }),
+      ],
+    });
+  });
+
   it("returns 405 for unsupported methods on /api/github/summary", async () => {
     const baseUrl = await startServer({
       readGithubRepoSummary: async () => ({
