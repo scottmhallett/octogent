@@ -10,6 +10,15 @@ const CODEX_HOOK_EVENTS = [
   "Stop",
 ] as const;
 
+const CODEX_HOOK_EVENT_COMMAND_MARKERS = {
+  SessionStart: "/api/hooks/session-start",
+  UserPromptSubmit: "/api/hooks/user-prompt-submit",
+  PreToolUse: "/api/hooks/pre-tool-use",
+  PermissionRequest: "/api/hooks/permission-request",
+  PostToolUse: "/api/code-intel/events",
+  Stop: "/api/hooks/stop",
+} as const satisfies Record<(typeof CODEX_HOOK_EVENTS)[number], string>;
+
 type CodexHookEventName = (typeof CODEX_HOOK_EVENTS)[number];
 
 type CodexCommandHook = {
@@ -149,6 +158,28 @@ const isOctogentCommandHook = (hook: unknown): boolean => {
   );
 };
 
+const hasOctogentCommandForEvent = (eventName: CodexHookEventName, entries: unknown): boolean => {
+  if (!Array.isArray(entries)) {
+    return false;
+  }
+
+  const commandMarker = CODEX_HOOK_EVENT_COMMAND_MARKERS[eventName];
+  return entries.some((entry) => {
+    if (!isRecord(entry) || !Array.isArray(entry.hooks)) {
+      return false;
+    }
+
+    return entry.hooks.some(
+      (hook) =>
+        isRecord(hook) &&
+        hook.type === "command" &&
+        typeof hook.command === "string" &&
+        hook.command.includes(commandMarker) &&
+        hook.command.includes("OCTOGENT_SESSION_ID"),
+    );
+  });
+};
+
 const preserveNonOctogentEntry = (entry: unknown): unknown | null => {
   if (!isRecord(entry) || !Array.isArray(entry.hooks)) {
     return entry;
@@ -206,8 +237,9 @@ export const hasOctogentCodexHooks = (targetCwd: string): boolean => {
     return false;
   }
 
+  const hooksByEvent = hooks as Record<string, unknown>;
   return CODEX_HOOK_EVENTS.every((eventName) =>
-    Array.isArray((hooks as Record<string, unknown>)[eventName]),
+    hasOctogentCommandForEvent(eventName, hooksByEvent[eventName]),
   );
 };
 

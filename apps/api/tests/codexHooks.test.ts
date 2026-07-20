@@ -68,6 +68,66 @@ describe("Codex hook config", () => {
     expect(hooks.Stop).toBeDefined();
   });
 
+  it("does not detect user-only hook arrays as installed Octogent hooks", () => {
+    const workspaceCwd = createTemporaryDirectory();
+    mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });
+    const hooksPath = getCodexHooksPath(workspaceCwd);
+    const userHookEntry = {
+      matcher: "*",
+      hooks: [{ type: "command", command: "node ./scripts/user-hook.js", timeout: 3 }],
+    };
+
+    writeFileSync(
+      hooksPath,
+      `${JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [userHookEntry],
+            UserPromptSubmit: [userHookEntry],
+            PreToolUse: [userHookEntry],
+            PermissionRequest: [userHookEntry],
+            PostToolUse: [userHookEntry],
+            Stop: [userHookEntry],
+          },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    expect(hasOctogentCodexHooks(workspaceCwd)).toBe(false);
+  });
+
+  it("detects partial Octogent hook configs as incomplete and repairs them", () => {
+    const workspaceCwd = createTemporaryDirectory();
+    mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });
+    const hooksPath = getCodexHooksPath(workspaceCwd);
+    const partialConfig = buildCodexHooksConfig("http://127.0.0.1:8787");
+    (partialConfig.hooks as Partial<typeof partialConfig.hooks>).Stop = undefined;
+    partialConfig.hooks.PreToolUse.unshift({
+      matcher: "Read",
+      hooks: [{ type: "command", command: "node ./scripts/user-hook.js", timeout: 3 }],
+    });
+    writeFileSync(hooksPath, `${JSON.stringify(partialConfig, null, 2)}\n`);
+
+    expect(hasOctogentCodexHooks(workspaceCwd)).toBe(false);
+
+    installCodexHooksInDirectory(workspaceCwd, "http://127.0.0.1:9000");
+
+    expect(hasOctogentCodexHooks(workspaceCwd)).toBe(true);
+    const hooksConfig = JSON.parse(readFileSync(hooksPath, "utf8")) as Record<string, unknown>;
+    const hooks = hooksConfig.hooks as Record<string, unknown[]>;
+    expect(hooks.PreToolUse).toEqual(
+      expect.arrayContaining([
+        {
+          matcher: "Read",
+          hooks: [{ type: "command", command: "node ./scripts/user-hook.js", timeout: 3 }],
+        },
+      ]),
+    );
+    expect(JSON.stringify(hooks.Stop)).toContain("http://127.0.0.1:9000");
+  });
+
   it("preserves existing non-Octogent hooks and top-level settings when installing", () => {
     const workspaceCwd = createTemporaryDirectory();
     mkdirSync(join(workspaceCwd, ".codex"), { recursive: true });

@@ -439,9 +439,13 @@ describe("createApiServer", () => {
 
     while (Date.now() < timeoutAt) {
       if (existsSync(registryPath)) {
-        const document = JSON.parse(readFileSync(registryPath, "utf8")) as TDocument;
-        if (predicate(document)) {
-          return document;
+        try {
+          const document = JSON.parse(readFileSync(registryPath, "utf8")) as TDocument;
+          if (predicate(document)) {
+            return document;
+          }
+        } catch {
+          // Retry while another test action is in the middle of persisting the registry.
         }
       }
 
