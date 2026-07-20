@@ -2,15 +2,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { GITHUB_SPARKLINE_HEIGHT, GITHUB_SPARKLINE_WIDTH } from "../app/constants";
 import type { UsageChartData } from "../app/hooks/useUsageHeatmapPolling";
-import type { ClaudeUsageSnapshot } from "../app/types";
+import type { ClaudeUsageSnapshot, CodexUsageSnapshot } from "../app/types";
 import { OctopusGlyph } from "./EmptyOctopus";
 
 type RuntimeStatusStripProps = {
   sparklinePoints: string;
   usageData: UsageChartData | null;
   claudeUsage: ClaudeUsageSnapshot | null;
+  codexUsage?: CodexUsageSnapshot | null;
   isRefreshingClaudeUsage?: boolean;
+  isRefreshingCodexUsage?: boolean;
   onRefreshClaudeUsage?: () => void;
+  onRefreshCodexUsage?: () => void;
 };
 
 const MINI_USAGE_WIDTH = 160;
@@ -25,14 +28,16 @@ const buildUsageBars = (data: UsageChartData): MiniBar[] => {
 
   const totals = days.map((day) => (typeof day.totalTokens === "number" ? day.totalTokens : 0));
   const max = Math.max(...totals, 1);
-  const barSlot = MINI_USAGE_WIDTH / days.length;
+  const visibleDaySlots = 30;
+  const leadingEmptySlots = Math.max(0, visibleDaySlots - days.length);
+  const barSlot = MINI_USAGE_WIDTH / visibleDaySlots;
   const barWidth = Math.max(1, barSlot - MINI_BAR_GAP);
 
   return days.map((day, index) => {
     const totalTokens = typeof day.totalTokens === "number" ? day.totalTokens : 0;
     const h = Math.max(0.5, (totalTokens / max) * (MINI_USAGE_HEIGHT - 2));
     return {
-      x: index * barSlot,
+      x: (leadingEmptySlots + index) * barSlot,
       y: MINI_USAGE_HEIGHT - h,
       width: barWidth,
       height: h,
@@ -40,47 +45,126 @@ const buildUsageBars = (data: UsageChartData): MiniBar[] => {
   });
 };
 
+const usageHistoryLabel = (data: UsageChartData | null, hasBars: boolean) => {
+  if (!hasBars) {
+    return "TOKEN HISTORY —";
+  }
+
+  return data?.estimated ? "EST. TOKENS/DAY · LAST 30 DAYS" : "CLAUDE TOKENS/DAY · LAST 30 DAYS";
+};
+
 const pct = (value: number | null | undefined, loading?: boolean): string => {
   if (loading) return "···";
   return value == null ? "NA" : `${Math.round(value)}%`;
 };
 
-const usageState = (
-  claudeUsage: ClaudeUsageSnapshot | null,
-): {
-  label: string;
+type ProviderUsageState = {
+  provider: "Claude" | "Codex";
   loading: boolean;
-  sessionPercent: number | null | undefined;
-  weekPercent: number | null | undefined;
+  primaryLabel: string;
+  primaryPercent: number | null | undefined;
+  secondaryLabel: string;
+  secondaryPercent: number | null | undefined;
   message?: string;
-} => {
+};
+
+const claudeUsageState = (claudeUsage: ClaudeUsageSnapshot | null): ProviderUsageState => {
   if (claudeUsage === null) {
     return {
-      label: "Session",
+      provider: "Claude",
       loading: true,
-      sessionPercent: 0,
-      weekPercent: 0,
+      primaryLabel: "Session",
+      primaryPercent: 0,
+      secondaryLabel: "Week",
+      secondaryPercent: 0,
     };
   }
 
   const label = claudeUsage.source === "oauth-api" ? "5h" : "Session";
   if (claudeUsage.status === "ok") {
     return {
-      label,
+      provider: "Claude",
       loading: false,
-      sessionPercent: claudeUsage.primaryUsedPercent,
-      weekPercent: claudeUsage.secondaryUsedPercent,
+      primaryLabel: label,
+      primaryPercent: claudeUsage.primaryUsedPercent,
+      secondaryLabel: "Week",
+      secondaryPercent: claudeUsage.secondaryUsedPercent,
     };
   }
 
   return {
-    label,
+    provider: "Claude",
     loading: false,
-    sessionPercent: null,
-    weekPercent: null,
+    primaryLabel: label,
+    primaryPercent: null,
+    secondaryLabel: "Week",
+    secondaryPercent: null,
     message: claudeUsage.message ?? "Claude usage unavailable",
   };
 };
+
+const codexUsageState = (codexUsage: CodexUsageSnapshot | null | undefined): ProviderUsageState => {
+  if (codexUsage == null) {
+    return {
+      provider: "Codex",
+      loading: true,
+      primaryLabel: "5h",
+      primaryPercent: 0,
+      secondaryLabel: "Week",
+      secondaryPercent: 0,
+    };
+  }
+
+  if (codexUsage.status === "ok") {
+    return {
+      provider: "Codex",
+      loading: false,
+      primaryLabel: "5h",
+      primaryPercent: codexUsage.primaryUsedPercent,
+      secondaryLabel: codexUsage.creditsUnlimited ? "Credits" : "Week",
+      secondaryPercent: codexUsage.creditsUnlimited ? null : codexUsage.secondaryUsedPercent,
+    };
+  }
+
+  return {
+    provider: "Codex",
+    loading: false,
+    primaryLabel: "5h",
+    primaryPercent: null,
+    secondaryLabel: "Week",
+    secondaryPercent: null,
+    message: codexUsage.message ?? "Codex usage unavailable",
+  };
+};
+
+const isAvailableUsageSnapshot = (
+  usage: ClaudeUsageSnapshot | CodexUsageSnapshot | null | undefined,
+) => usage?.status === "ok";
+
+const shouldShowProviderUsage = (
+  usage: ClaudeUsageSnapshot | CodexUsageSnapshot | null | undefined,
+  hasAvailableProvider: boolean,
+) => usage == null || usage.status === "ok" || !hasAvailableProvider;
+
+const UsageProviderRows = ({ state }: { state: ProviderUsageState }) => (
+  <div className="console-status-provider-usage-provider">
+    <span className="console-status-provider-usage-provider-label">{state.provider}</span>
+    <div className="console-status-provider-usage-bars">
+      <UsageRail
+        label={state.primaryLabel}
+        percent={state.primaryPercent}
+        loading={state.loading}
+        {...(state.message ? { title: state.message } : {})}
+      />
+      <UsageRail
+        label={state.secondaryLabel}
+        percent={state.secondaryPercent}
+        loading={state.loading}
+        {...(state.message ? { title: state.message } : {})}
+      />
+    </div>
+  </div>
+);
 
 const UsageRail = ({
   label,
@@ -144,14 +228,28 @@ export const RuntimeStatusStrip = ({
   sparklinePoints,
   usageData,
   claudeUsage,
+  codexUsage,
   isRefreshingClaudeUsage = false,
+  isRefreshingCodexUsage = false,
   onRefreshClaudeUsage,
+  onRefreshCodexUsage,
 }: RuntimeStatusStripProps) => {
   const usageBars = useMemo(() => (usageData ? buildUsageBars(usageData) : []), [usageData]);
-  const claudeUsageState = usageState(claudeUsage);
+  const usageHistoryHasBars = usageBars.length > 0;
+  const usageHistoryTitle = usageHistoryLabel(usageData, usageHistoryHasBars);
+  const claudeState = claudeUsageState(claudeUsage);
+  const codexState = codexUsageState(codexUsage);
+  const hasAvailableProvider =
+    isAvailableUsageSnapshot(claudeUsage) || isAvailableUsageSnapshot(codexUsage);
+  const visibleProviderStates = [
+    shouldShowProviderUsage(claudeUsage, hasAvailableProvider) ? claudeState : null,
+    shouldShowProviderUsage(codexUsage, hasAvailableProvider) ? codexState : null,
+  ].filter((state): state is ProviderUsageState => state !== null);
   const [showRefreshSpin, setShowRefreshSpin] = useState(false);
   const refreshStartedAtRef = useRef<number | null>(null);
   const refreshHideTimerRef = useRef<number | null>(null);
+  const isRefreshingUsage = isRefreshingClaudeUsage || isRefreshingCodexUsage;
+  const handleRefreshUsage = onRefreshClaudeUsage ?? onRefreshCodexUsage;
 
   useEffect(() => {
     return () => {
@@ -162,7 +260,7 @@ export const RuntimeStatusStrip = ({
   }, []);
 
   useEffect(() => {
-    if (isRefreshingClaudeUsage) {
+    if (isRefreshingUsage) {
       if (refreshHideTimerRef.current !== null) {
         window.clearTimeout(refreshHideTimerRef.current);
         refreshHideTimerRef.current = null;
@@ -184,7 +282,7 @@ export const RuntimeStatusStrip = ({
       refreshStartedAtRef.current = null;
       refreshHideTimerRef.current = null;
     }, remainingMs);
-  }, [isRefreshingClaudeUsage]);
+  }, [isRefreshingUsage]);
 
   return (
     <section className="console-status-strip" aria-label="Runtime status strip">
@@ -209,8 +307,17 @@ export const RuntimeStatusStrip = ({
           </div>
           <span className="console-status-sparkline-label">COMMITS/DAY · LAST 30 DAYS</span>
         </div>
-        <div className="console-status-usage-mini" aria-label="Claude token usage last 30 days">
-          {usageBars.length > 0 ? (
+        <div
+          className="console-status-usage-mini"
+          aria-label={
+            usageHistoryHasBars
+              ? usageData?.estimated
+                ? "Estimated token usage last 30 days"
+                : "Claude token usage last 30 days"
+              : "Token usage history unavailable"
+          }
+        >
+          {usageHistoryHasBars ? (
             <>
               <div className="console-status-usage-mini-chart">
                 <svg viewBox={`0 0 ${MINI_USAGE_WIDTH} ${MINI_USAGE_HEIGHT}`} role="presentation">
@@ -226,46 +333,38 @@ export const RuntimeStatusStrip = ({
                   ))}
                 </svg>
               </div>
-              <span className="console-status-sparkline-label">
-                CLAUDE TOKENS/DAY · LAST 30 DAYS
-              </span>
+              <span className="console-status-sparkline-label">{usageHistoryTitle}</span>
             </>
           ) : (
-            <span className="console-status-sparkline-label">CLAUDE USAGE —</span>
+            <span className="console-status-sparkline-label">{usageHistoryTitle}</span>
           )}
         </div>
       </div>
-      <div className="console-status-claude-usage" aria-label="Claude usage limits">
-        {onRefreshClaudeUsage && (
+      <div className="console-status-provider-usage" aria-label="Agent usage limits">
+        {handleRefreshUsage && (
           <button
             type="button"
-            className="console-status-claude-usage-refresh"
-            onClick={onRefreshClaudeUsage}
-            aria-label="Refresh Claude usage"
-            title="Refresh Claude usage"
+            className="console-status-provider-usage-refresh"
+            onClick={() => {
+              onRefreshClaudeUsage?.();
+              onRefreshCodexUsage?.();
+            }}
+            aria-label="Refresh agent usage"
+            title="Refresh agent usage"
             data-refreshing={showRefreshSpin ? "true" : "false"}
           >
             ↻
           </button>
         )}
-        <span className="console-status-claude-usage-title">
-          CLAUDE
+        <span className="console-status-provider-usage-title">
+          AGENT
           <br />
-          USAGE
+          LIMITS
         </span>
-        <div className="console-status-claude-usage-bars">
-          <UsageRail
-            label={claudeUsageState.label}
-            percent={claudeUsageState.sessionPercent}
-            loading={claudeUsageState.loading}
-            {...(claudeUsageState.message ? { title: claudeUsageState.message } : {})}
-          />
-          <UsageRail
-            label="Week (all)"
-            percent={claudeUsageState.weekPercent}
-            loading={claudeUsageState.loading}
-            {...(claudeUsageState.message ? { title: claudeUsageState.message } : {})}
-          />
+        <div className="console-status-provider-usage-list">
+          {visibleProviderStates.map((state) => (
+            <UsageProviderRows key={state.provider} state={state} />
+          ))}
         </div>
       </div>
     </section>

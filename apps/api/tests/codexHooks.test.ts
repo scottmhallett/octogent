@@ -49,8 +49,10 @@ describe("Codex hook config", () => {
     expect(config.hooks.PermissionRequest[0]?.hooks[0]?.command).toContain(
       "/api/hooks/permission-request",
     );
+    expect(config.hooks.PermissionRequest[0]?.hooks[0]?.command).toContain("-o /dev/null");
     expect(config.hooks.PostToolUse[0]?.hooks[0]?.command).toContain("/api/code-intel/events");
     expect(config.hooks.PostToolUse[0]?.hooks[0]?.command).toContain("X-Octogent-Session");
+    expect(config.hooks.PostToolUse[0]?.hooks[0]?.command).toContain("-o /dev/null");
   });
 
   it("installs project hooks.json and detects it later", () => {

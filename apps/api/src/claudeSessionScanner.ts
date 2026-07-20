@@ -21,6 +21,8 @@ export type UsageChartResponse = {
   days: UsageDayEntry[];
   projects: string[];
   models: string[];
+  source?: "claude-session-history" | "octogent-transcript-estimate" | "mixed";
+  estimated?: boolean;
 };
 
 type AssistantEvent = {
@@ -55,6 +57,52 @@ type DayBucket = {
   projectTokens: Map<string, number>;
   modelTokens: Map<string, number>;
   sessions: Set<string>;
+};
+
+const ESCAPE_CHARACTER = String.fromCharCode(27);
+const BELL_CHARACTER = String.fromCharCode(7);
+const ANSI_CSI_RE = new RegExp(`${ESCAPE_CHARACTER}\\[[0-?]*[ -/]*[@-~]`, "g");
+const ANSI_OSC_RE = new RegExp(
+  `${ESCAPE_CHARACTER}\\][^${BELL_CHARACTER}]*(?:${BELL_CHARACTER}|${ESCAPE_CHARACTER}\\\\)`,
+  "g",
+);
+const ANSI_SINGLE_CHAR_RE = new RegExp(`${ESCAPE_CHARACTER}[@-_]`, "g");
+
+const stripControlCharacters = (value: string): string =>
+  Array.from(value)
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 10 || code === 9 || (code > 31 && code !== 127);
+    })
+    .join("");
+
+const normalizeTranscriptUsageText = (value: string): string =>
+  stripControlCharacters(
+    value
+      .replaceAll(`${ESCAPE_CHARACTER}[200~`, "")
+      .replaceAll(`${ESCAPE_CHARACTER}[201~`, "")
+      .replace(ANSI_OSC_RE, "")
+      .replace(ANSI_CSI_RE, "")
+      .replace(ANSI_SINGLE_CHAR_RE, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n"),
+  ).trim();
+
+const estimateTokensFromText = (value: string): number =>
+  Math.max(0, Math.ceil(normalizeTranscriptUsageText(value).length / 4));
+
+const ensureBucket = (buckets: Map<string, DayBucket>, dateKey: string): DayBucket => {
+  let bucket = buckets.get(dateKey);
+  if (!bucket) {
+    bucket = {
+      totalTokens: 0,
+      projectTokens: new Map(),
+      modelTokens: new Map(),
+      sessions: new Set(),
+    };
+    buckets.set(dateKey, bucket);
+  }
+  return bucket;
 };
 
 const scanJsonlFile = async (
@@ -96,16 +144,7 @@ const scanJsonlFile = async (
 
     if (totalTokens === 0) continue;
 
-    let bucket = buckets.get(dateKey);
-    if (!bucket) {
-      bucket = {
-        totalTokens: 0,
-        projectTokens: new Map(),
-        modelTokens: new Map(),
-        sessions: new Set(),
-      };
-      buckets.set(dateKey, bucket);
-    }
+    const bucket = ensureBucket(buckets, dateKey);
 
     bucket.totalTokens += totalTokens;
     bucket.projectTokens.set(
@@ -166,6 +205,126 @@ const mapToSlices = (map: Map<string, number>): UsageSlice[] =>
 
 const projectSlugFromCwd = (cwd: string): string => cwd.replace(/\//g, "-");
 
+const buildUsageChartResponse = (
+  buckets: Map<string, DayBucket>,
+  source: NonNullable<UsageChartResponse["source"]>,
+  estimated = false,
+): UsageChartResponse => {
+  const projectTotals = new Map<string, number>();
+  const modelTotals = new Map<string, number>();
+
+  const days: UsageDayEntry[] = Array.from(buckets.entries())
+    .map(([date, bucket]) => {
+      for (const [p, t] of bucket.projectTokens) {
+        projectTotals.set(p, (projectTotals.get(p) ?? 0) + t);
+      }
+      for (const [m, t] of bucket.modelTokens) {
+        modelTotals.set(m, (modelTotals.get(m) ?? 0) + t);
+      }
+      return {
+        date,
+        totalTokens: bucket.totalTokens,
+        projects: mapToSlices(bucket.projectTokens),
+        models: mapToSlices(bucket.modelTokens),
+        sessions: bucket.sessions.size,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    days,
+    projects: sortedKeys(projectTotals),
+    models: sortedKeys(modelTotals),
+    source,
+    estimated,
+  };
+};
+
+const responseHasUsage = (response: UsageChartResponse): boolean =>
+  response.days.some((day) => day.totalTokens > 0);
+
+const mergeUsageSlices = (target: Map<string, number>, slices: UsageSlice[]) => {
+  for (const slice of slices) {
+    target.set(slice.key, (target.get(slice.key) ?? 0) + slice.tokens);
+  }
+};
+
+export const mergeUsageChartResponses = (
+  claudeUsage: UsageChartResponse,
+  transcriptUsage: UsageChartResponse,
+): UsageChartResponse => {
+  if (!responseHasUsage(claudeUsage)) {
+    return transcriptUsage;
+  }
+  if (!responseHasUsage(transcriptUsage)) {
+    return claudeUsage;
+  }
+
+  const buckets = new Map<
+    string,
+    {
+      totalTokens: number;
+      projectTokens: Map<string, number>;
+      modelTokens: Map<string, number>;
+      sessions: number;
+    }
+  >();
+
+  const addDay = (day: UsageDayEntry) => {
+    let bucket = buckets.get(day.date);
+    if (!bucket) {
+      bucket = {
+        totalTokens: 0,
+        projectTokens: new Map(),
+        modelTokens: new Map(),
+        sessions: 0,
+      };
+      buckets.set(day.date, bucket);
+    }
+
+    bucket.totalTokens += day.totalTokens;
+    bucket.sessions += day.sessions;
+    mergeUsageSlices(bucket.projectTokens, day.projects);
+    mergeUsageSlices(bucket.modelTokens, day.models);
+  };
+
+  for (const day of claudeUsage.days) {
+    addDay(day);
+  }
+  for (const day of transcriptUsage.days) {
+    addDay(day);
+  }
+
+  const projectTotals = new Map<string, number>();
+  const modelTotals = new Map<string, number>();
+  const days: UsageDayEntry[] = Array.from(buckets.entries())
+    .map(([date, bucket]) => {
+      for (const [project, tokens] of bucket.projectTokens) {
+        projectTotals.set(project, (projectTotals.get(project) ?? 0) + tokens);
+      }
+      for (const [model, tokens] of bucket.modelTokens) {
+        modelTotals.set(model, (modelTotals.get(model) ?? 0) + tokens);
+      }
+
+      return {
+        date,
+        totalTokens: bucket.totalTokens,
+        projects: mapToSlices(bucket.projectTokens),
+        models: mapToSlices(bucket.modelTokens),
+        sessions: bucket.sessions,
+      };
+    })
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    days,
+    projects: sortedKeys(projectTotals),
+    models: sortedKeys(modelTotals),
+    source: "mixed",
+    estimated: true,
+  };
+};
+
 let cachedResult: { response: UsageChartResponse; fetchedAt: number; cacheKey: string } | null =
   null;
 const CACHE_TTL_MS = 120_000;
@@ -204,32 +363,106 @@ export const scanClaudeUsageChart = async (
     );
   }
 
-  const projectTotals = new Map<string, number>();
-  const modelTotals = new Map<string, number>();
-
-  const days: UsageDayEntry[] = Array.from(buckets.entries())
-    .map(([date, bucket]) => {
-      for (const [p, t] of bucket.projectTokens) {
-        projectTotals.set(p, (projectTotals.get(p) ?? 0) + t);
-      }
-      for (const [m, t] of bucket.modelTokens) {
-        modelTotals.set(m, (modelTotals.get(m) ?? 0) + t);
-      }
-      return {
-        date,
-        totalTokens: bucket.totalTokens,
-        projects: mapToSlices(bucket.projectTokens),
-        models: mapToSlices(bucket.modelTokens),
-        sessions: bucket.sessions.size,
-      };
-    })
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  const response: UsageChartResponse = {
-    days,
-    projects: sortedKeys(projectTotals),
-    models: sortedKeys(modelTotals),
-  };
+  const response = buildUsageChartResponse(buckets, "claude-session-history", false);
   cachedResult = { response, fetchedAt: Date.now(), cacheKey };
   return response;
+};
+
+const isTranscriptUsageEvent = (
+  value: unknown,
+): value is {
+  sessionId: string;
+  timestamp: string;
+  type: "input_submit" | "output_chunk";
+  text: string;
+} => {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.type === "input_submit" || record.type === "output_chunk") &&
+    typeof record.sessionId === "string" &&
+    typeof record.timestamp === "string" &&
+    typeof record.text === "string"
+  );
+};
+
+const scanTranscriptUsageFile = async (
+  filePath: string,
+  projectLabel: string,
+  buckets: Map<string, DayBucket>,
+): Promise<void> => {
+  let content: string;
+  try {
+    content = await readFile(filePath, "utf8");
+  } catch {
+    return;
+  }
+
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    if (!isTranscriptUsageEvent(parsed)) continue;
+
+    const dateKey = toDateKey(parsed.timestamp);
+    if (!dateKey) continue;
+
+    const totalTokens = estimateTokensFromText(parsed.text);
+    if (totalTokens === 0) continue;
+
+    const bucket = ensureBucket(buckets, dateKey);
+    bucket.totalTokens += totalTokens;
+    bucket.projectTokens.set(
+      projectLabel,
+      (bucket.projectTokens.get(projectLabel) ?? 0) + totalTokens,
+    );
+    bucket.modelTokens.set(
+      "codex-estimate",
+      (bucket.modelTokens.get("codex-estimate") ?? 0) + totalTokens,
+    );
+    bucket.sessions.add(parsed.sessionId);
+  }
+};
+
+export const scanOctogentTranscriptUsageChart = async (
+  transcriptDirectoryPath: string,
+  workspaceCwd: string,
+): Promise<UsageChartResponse> => {
+  const buckets = new Map<string, DayBucket>();
+  let files: string[];
+  try {
+    files = await readdir(transcriptDirectoryPath);
+  } catch {
+    return buildUsageChartResponse(buckets, "octogent-transcript-estimate", true);
+  }
+
+  const projectLabel = slugToLabel(projectSlugFromCwd(workspaceCwd));
+  await Promise.all(
+    files
+      .filter((file) => file.endsWith(".jsonl"))
+      .map((file) =>
+        scanTranscriptUsageFile(join(transcriptDirectoryPath, file), projectLabel, buckets),
+      ),
+  );
+
+  return buildUsageChartResponse(buckets, "octogent-transcript-estimate", true);
+};
+
+export const scanUsageChart = async (
+  scope: "all" | "project",
+  workspaceCwd: string,
+  transcriptDirectoryPath: string,
+): Promise<UsageChartResponse> => {
+  const [claudeUsage, transcriptUsage] = await Promise.all([
+    scanClaudeUsageChart(scope, workspaceCwd),
+    scanOctogentTranscriptUsageChart(transcriptDirectoryPath, workspaceCwd),
+  ]);
+  return mergeUsageChartResponses(claudeUsage, transcriptUsage);
 };

@@ -2,7 +2,7 @@ import { cpSync, existsSync as fsExistsSync, mkdirSync, readdirSync } from "node
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 
-import { scanClaudeUsageChart } from "./claudeSessionScanner";
+import { scanUsageChart } from "./claudeSessionScanner";
 import {
   invalidateUsageCache as invalidateUsageCacheDefault,
   readClaudeCliUsageSnapshot as readClaudeCliUsageSnapshotDefault,
@@ -113,7 +113,8 @@ export const createApiServer = ({
     });
   const scanUsageHeatmapWithDefault =
     scanUsageHeatmap ??
-    ((scope: "all" | "project") => scanClaudeUsageChart(scope, resolvedWorkspaceCwd));
+    ((scope: "all" | "project") =>
+      scanUsageChart(scope, resolvedWorkspaceCwd, join(resolvedStateDir, "state", "transcripts")));
 
   const codeIntelStore = createCodeIntelStore(resolvedStateDir);
 

@@ -573,6 +573,227 @@ describe("createApiServer", () => {
     ]);
   });
 
+  it("returns conversations assembled from provider-neutral transcript events", async () => {
+    const workspaceCwd = mkdtempSync(join(tmpdir(), "octogent-api-test-"));
+    temporaryDirectories.push(workspaceCwd);
+    writeConversationTranscript(workspaceCwd, "codex-terminal-1", [
+      {
+        type: "session_start",
+        eventId: "codex-terminal-1:1",
+        sessionId: "codex-terminal-1",
+        tentacleId: "codex-terminal-1",
+        timestamp: "2026-03-06T10:00:00.000Z",
+      },
+      {
+        type: "input_submit",
+        eventId: "codex-terminal-1:2",
+        sessionId: "codex-terminal-1",
+        tentacleId: "codex-terminal-1",
+        submitId: "codex-terminal-1:input:2",
+        text: "inspect the repo",
+        timestamp: "2026-03-06T10:00:01.000Z",
+      },
+      {
+        type: "output_chunk",
+        eventId: "codex-terminal-1:3",
+        sessionId: "codex-terminal-1",
+        tentacleId: "codex-terminal-1",
+        chunkId: "codex-terminal-1:output:3",
+        text: "\u001b[32mFound package.json\u001b[0m\r\n",
+        timestamp: "2026-03-06T10:00:02.000Z",
+      },
+      {
+        type: "session_end",
+        eventId: "codex-terminal-1:4",
+        sessionId: "codex-terminal-1",
+        tentacleId: "codex-terminal-1",
+        reason: "session_close",
+        timestamp: "2026-03-06T10:00:03.000Z",
+      },
+    ]);
+
+    const baseUrl = await startServer({
+      workspaceCwd,
+    });
+
+    const listResponse = await fetch(`${baseUrl}/api/conversations`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    expect(listResponse.status).toBe(200);
+    await expect(listResponse.json()).resolves.toMatchObject([
+      {
+        sessionId: "codex-terminal-1",
+        turnCount: 2,
+        firstUserTurnPreview: "inspect the repo",
+        lastAssistantTurnPreview: "Found package.json",
+      },
+    ]);
+
+    const detailResponse = await fetch(`${baseUrl}/api/conversations/codex-terminal-1`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    expect(detailResponse.status).toBe(200);
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      sessionId: "codex-terminal-1",
+      turns: [
+        {
+          role: "user",
+          content: "inspect the repo",
+        },
+        {
+          role: "assistant",
+          content: "Found package.json",
+        },
+      ],
+    });
+  });
+
+  it("prefers provider-neutral transcript turns over assistant-only sidecars", async () => {
+    const workspaceCwd = mkdtempSync(join(tmpdir(), "octogent-api-test-"));
+    temporaryDirectories.push(workspaceCwd);
+    writeConversationTranscript(workspaceCwd, "codex-terminal-sidecar", [
+      {
+        type: "session_start",
+        eventId: "codex-terminal-sidecar:1",
+        sessionId: "codex-terminal-sidecar",
+        tentacleId: "codex-terminal-sidecar",
+        timestamp: "2026-03-06T10:00:00.000Z",
+      },
+      {
+        type: "input_submit",
+        eventId: "codex-terminal-sidecar:2",
+        sessionId: "codex-terminal-sidecar",
+        tentacleId: "codex-terminal-sidecar",
+        submitId: "codex-terminal-sidecar:input:2",
+        text: "count root files",
+        timestamp: "2026-03-06T10:00:01.000Z",
+      },
+      {
+        type: "output_chunk",
+        eventId: "codex-terminal-sidecar:3",
+        sessionId: "codex-terminal-sidecar",
+        tentacleId: "codex-terminal-sidecar",
+        chunkId: "codex-terminal-sidecar:output:3",
+        text: "There are 11 files.",
+        timestamp: "2026-03-06T10:00:02.000Z",
+      },
+    ]);
+    writeClaudeTurns(workspaceCwd, "codex-terminal-sidecar", [
+      {
+        turnId: "turn-1",
+        role: "assistant",
+        content: "There are 11 files.",
+        startedAt: "2026-03-06T10:00:02.000Z",
+        endedAt: "2026-03-06T10:00:02.000Z",
+      },
+    ]);
+
+    const baseUrl = await startServer({
+      workspaceCwd,
+    });
+
+    const detailResponse = await fetch(`${baseUrl}/api/conversations/codex-terminal-sidecar`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    expect(detailResponse.status).toBe(200);
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      sessionId: "codex-terminal-sidecar",
+      turnCount: 2,
+      turns: [
+        {
+          role: "user",
+          content: "count root files",
+        },
+        {
+          role: "assistant",
+          content: "There are 11 files.",
+        },
+      ],
+    });
+  });
+
+  it("prefers Claude sidecar turns when they include user prompts", async () => {
+    const workspaceCwd = mkdtempSync(join(tmpdir(), "octogent-api-test-"));
+    temporaryDirectories.push(workspaceCwd);
+    writeConversationTranscript(workspaceCwd, "claude-terminal-sidecar", [
+      {
+        type: "session_start",
+        eventId: "claude-terminal-sidecar:1",
+        sessionId: "claude-terminal-sidecar",
+        tentacleId: "claude-terminal-sidecar",
+        timestamp: "2026-03-06T10:00:00.000Z",
+      },
+      {
+        type: "input_submit",
+        eventId: "claude-terminal-sidecar:2",
+        sessionId: "claude-terminal-sidecar",
+        tentacleId: "claude-terminal-sidecar",
+        submitId: "claude-terminal-sidecar:input:2",
+        text: "summarize status",
+        timestamp: "2026-03-06T10:00:01.000Z",
+      },
+      {
+        type: "output_chunk",
+        eventId: "claude-terminal-sidecar:3",
+        sessionId: "claude-terminal-sidecar",
+        tentacleId: "claude-terminal-sidecar",
+        chunkId: "claude-terminal-sidecar:output:3",
+        text: "\u001b[?2026h› summarize status\r\n• Working\r\nClean answer",
+        timestamp: "2026-03-06T10:00:02.000Z",
+      },
+    ]);
+    writeClaudeTurns(workspaceCwd, "claude-terminal-sidecar", [
+      {
+        turnId: "turn-1",
+        role: "user",
+        content: "summarize status",
+        startedAt: "2026-03-06T10:00:01.000Z",
+        endedAt: "2026-03-06T10:00:01.000Z",
+      },
+      {
+        turnId: "turn-2",
+        role: "assistant",
+        content: "Clean answer",
+        startedAt: "2026-03-06T10:00:02.000Z",
+        endedAt: "2026-03-06T10:00:02.000Z",
+      },
+    ]);
+
+    const baseUrl = await startServer({
+      workspaceCwd,
+    });
+
+    const detailResponse = await fetch(`${baseUrl}/api/conversations/claude-terminal-sidecar`, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
+    expect(detailResponse.status).toBe(200);
+    await expect(detailResponse.json()).resolves.toMatchObject({
+      sessionId: "claude-terminal-sidecar",
+      turns: [
+        {
+          role: "user",
+          content: "summarize status",
+        },
+        {
+          role: "assistant",
+          content: "Clean answer",
+        },
+      ],
+    });
+  });
+
   it("returns assembled conversation details and export payloads", async () => {
     const workspaceCwd = mkdtempSync(join(tmpdir(), "octogent-api-test-"));
     temporaryDirectories.push(workspaceCwd);

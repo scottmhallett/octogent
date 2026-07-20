@@ -423,7 +423,7 @@ describe("createSessionRuntime", () => {
     runtime.close();
   });
 
-  it("launches Codex directly with workspace flags and prompt argument", () => {
+  it("launches Codex directly with workspace flags and records the prompt argument", async () => {
     const tentacleId = "tentacle-1";
     const terminals = new Map<string, PersistedTerminal>([
       [
@@ -478,6 +478,23 @@ describe("createSessionRuntime", () => {
       }),
     );
     expect(pty.write).not.toHaveBeenCalled();
+
+    const transcriptPath = join(transcriptDirectoryPath, `${encodeURIComponent(tentacleId)}.jsonl`);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (existsSync(transcriptPath)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const transcriptEvents = readFileSync(transcriptPath, "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as { type: string; text?: string });
+    expect(
+      transcriptEvents.some(
+        (event) => event.type === "input_submit" && event.text === "Investigate and report back.",
+      ),
+    ).toBe(true);
 
     runtime.close();
   });
@@ -795,9 +812,130 @@ describe("createSessionRuntime", () => {
 
     expect(transcriptEvents.some((event) => event.type === "session_start")).toBe(true);
     expect(
+      transcriptEvents.some((event) => event.type === "input_submit" && event.text === "echo hi"),
+    ).toBe(true);
+    expect(
+      transcriptEvents.some(
+        (event) => event.type === "output_chunk" && event.text === "\u001b[31mred\u001b[0m\r\n",
+      ),
+    ).toBe(true);
+    expect(
       transcriptEvents.some(
         (event) => event.type === "session_end" && event.reason === "session_close",
       ),
+    ).toBe(true);
+  });
+
+  it("does not treat inserted multi-line prompt drafts as submissions", async () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const pty = new FakePty();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+    spawnMock.mockReturnValue(pty);
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => process.cwd(),
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+    });
+
+    const socket = new FakeWebSocket();
+    websocketServer.nextSocket = socket;
+    expect(
+      runtime.handleUpgrade(createUpgradeRequest(tentacleId), {} as Duplex, Buffer.alloc(0)),
+    ).toBe(true);
+
+    socket.emit("message", JSON.stringify({ type: "input", data: "line one\nline two" }));
+    runtime.close();
+
+    const transcriptPath = join(transcriptDirectoryPath, `${encodeURIComponent(tentacleId)}.jsonl`);
+    const transcriptEvents = existsSync(transcriptPath)
+      ? readFileSync(transcriptPath, "utf8")
+          .trim()
+          .split(/\r?\n/)
+          .filter((line) => line.length > 0)
+          .map((line) => JSON.parse(line) as { type: string; text?: string })
+      : [];
+
+    expect(transcriptEvents.some((event) => event.type === "input_submit")).toBe(false);
+  });
+
+  it("applies backspace edits before recording submitted input", async () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const pty = new FakePty();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+    spawnMock.mockReturnValue(pty);
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => process.cwd(),
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+    });
+
+    const socket = new FakeWebSocket();
+    websocketServer.nextSocket = socket;
+    expect(
+      runtime.handleUpgrade(createUpgradeRequest(tentacleId), {} as Duplex, Buffer.alloc(0)),
+    ).toBe(true);
+
+    socket.emit("message", JSON.stringify({ type: "input", data: "helo" }));
+    socket.emit("message", JSON.stringify({ type: "input", data: "\b" }));
+    socket.emit("message", JSON.stringify({ type: "input", data: "lo\r" }));
+    runtime.close();
+
+    const transcriptPath = join(transcriptDirectoryPath, `${encodeURIComponent(tentacleId)}.jsonl`);
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (existsSync(transcriptPath)) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    const transcriptEvents = readFileSync(transcriptPath, "utf8")
+      .trim()
+      .split(/\r?\n/)
+      .map((line) => JSON.parse(line) as { type: string; text?: string });
+
+    expect(
+      transcriptEvents.some((event) => event.type === "input_submit" && event.text === "hello"),
     ).toBe(true);
   });
 

@@ -394,17 +394,23 @@ export const useCanvasGraphData = ({
 
   // Inactive sessions from conversations
   for (const session of inactiveSessions) {
-    if (!session.tentacleId || !seenTentacleIds.has(session.tentacleId)) continue;
+    if (!session.tentacleId) continue;
+    const isOctobossSession = session.tentacleId === OCTOBOSS_ID;
+    if (!isOctobossSession && !seenTentacleIds.has(session.tentacleId)) continue;
     if (activeTerminalIds.has(session.sessionId)) continue;
 
-    const tentacleNodeId = buildTentacleNodeId(session.tentacleId);
+    const tentacleNodeId = isOctobossSession
+      ? OCTOBOSS_NODE_ID
+      : buildTentacleNodeId(session.tentacleId);
     const sessionNodeId = buildInactiveSessionNodeId(session.sessionId);
     const prevSession = prevNodes.get(sessionNodeId);
 
     const parentNode = nodes.find((n) => n.id === tentacleNodeId);
     const parentX = parentNode?.x ?? 0;
     const parentY = parentNode?.y ?? 0;
-    const color = tentacleColor(session.tentacleId, deckMap.get(session.tentacleId)?.color);
+    const color = isOctobossSession
+      ? octobossColor
+      : tentacleColor(session.tentacleId, deckMap.get(session.tentacleId)?.color);
     const jitter = () => (Math.random() - 0.5) * 60;
 
     const sessionNode: GraphNode = {

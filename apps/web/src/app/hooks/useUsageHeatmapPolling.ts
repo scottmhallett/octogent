@@ -18,6 +18,8 @@ export type UsageChartData = {
   days: UsageDayEntry[];
   projects: string[];
   models: string[];
+  source?: "claude-session-history" | "octogent-transcript-estimate" | "mixed";
+  estimated?: boolean;
 };
 
 const POLL_INTERVAL_MS = 120_000;
