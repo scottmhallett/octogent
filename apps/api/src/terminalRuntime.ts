@@ -474,16 +474,19 @@ export const createTerminalRuntime = ({
       worktreeManager.createTentacleWorktree(effectiveWorktreeId, baseRef);
     }
 
-    if (terminal.agentProvider === "claude-code") {
-      // Claude hooks should only be installed for Claude-backed terminals.
-      try {
-        const hookTargetCwd = shouldCreateWorktree
-          ? worktreeManager.getTentacleWorkspaceCwd(effectiveWorktreeId)
-          : workspaceCwd;
+    try {
+      const hookTargetCwd = shouldCreateWorktree
+        ? worktreeManager.getTentacleWorkspaceCwd(effectiveWorktreeId)
+        : workspaceCwd;
+
+      if (terminal.agentProvider === "claude-code") {
+        // Claude hooks should only be installed for Claude-backed terminals.
         hookProcessor.installHooksInDirectory(hookTargetCwd);
-      } catch {
-        // Best-effort: hook installation should not block terminal creation.
+      } else if (terminal.agentProvider === "codex") {
+        hookProcessor.installCodexHooksInDirectory(hookTargetCwd);
       }
+    } catch {
+      // Best-effort: hook installation should not block terminal creation.
     }
 
     terminals.set(terminalId, terminal);

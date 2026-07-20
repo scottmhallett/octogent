@@ -25,7 +25,12 @@ import type { GraphNode } from "../app/canvas/types";
 import { useAgentRuntimeStates } from "../app/hooks/useAgentRuntimeStates";
 import { useCanvasGraphData } from "../app/hooks/useCanvasGraphData";
 import { useCanvasTransform } from "../app/hooks/useCanvasTransform";
-import { DEFAULT_FORCE_PARAMS, useForceSimulation } from "../app/hooks/useForceSimulation";
+import {
+  DEFAULT_FORCE_PARAMS,
+  WORLD_H,
+  WORLD_W,
+  useForceSimulation,
+} from "../app/hooks/useForceSimulation";
 import type { PendingDeleteTerminal } from "../app/hooks/useTerminalMutations";
 import {
   type TerminalRuntimeStateStore,
@@ -36,7 +41,7 @@ import { DeleteTentacleDialog } from "./DeleteTentacleDialog";
 import { CanvasTentaclePanel } from "./canvas/CanvasTentaclePanel";
 import { CanvasTerminalColumn } from "./canvas/CanvasTerminalColumn";
 import { DeleteAllTerminalsDialog } from "./canvas/DeleteAllTerminalsDialog";
-import { OctopusNode } from "./canvas/OctopusNode";
+import { OctopusNode, OctopusNodeGlyph, getOctopusNodeGlyphMetrics } from "./canvas/OctopusNode";
 import { SessionNode } from "./canvas/SessionNode";
 import { WorkspaceSetupCard } from "./deck/WorkspaceSetupCard";
 
@@ -252,6 +257,7 @@ export const CanvasPrimaryView = ({
   const hasHydratedTerminals = useRef(false);
   const hasHydratedTentacles = useRef(false);
   const lastHandledCreatedTerminalIdRef = useRef<string | null>(null);
+  const lastFitNodeKeyRef = useRef<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const nodeClickedRef = useRef(false);
   const dividerDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
@@ -290,6 +296,32 @@ export const CanvasPrimaryView = ({
     centerX: 0,
     centerY: 0,
   });
+
+  const simulatedNodeKey = useMemo(
+    () => simulatedNodes.map((node) => node.id).join("\0"),
+    [simulatedNodes],
+  );
+
+  useEffect(() => {
+    if (simulatedNodes.length === 0) return;
+    if (lastFitNodeKeyRef.current === simulatedNodeKey) return;
+
+    lastFitNodeKeyRef.current = simulatedNodeKey;
+    const nodesToFit =
+      simulatedNodes.length === 1
+        ? [
+            { x: -WORLD_W / 2, y: -WORLD_H / 2 },
+            { x: WORLD_W / 2, y: WORLD_H / 2 },
+          ]
+        : simulatedNodes;
+    const rafId = window.requestAnimationFrame(() => {
+      fitAll(nodesToFit);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [fitAll, simulatedNodeKey, simulatedNodes]);
 
   const nodesById = useMemo(() => {
     const map = new Map<string, GraphNode>();
@@ -1104,6 +1136,27 @@ export const CanvasPrimaryView = ({
             ))}
           </g>
         </svg>
+
+        <div className="canvas-glyph-layer" aria-hidden="true">
+          {tentacleNodes.map((node) => {
+            const { glyphW, glyphH } = getOctopusNodeGlyphMetrics(node);
+            return (
+              <div
+                key={node.id}
+                className="canvas-glyph-overlay"
+                style={{
+                  left: node.x * transform.scale + transform.translateX,
+                  top: node.y * transform.scale + transform.translateY,
+                  width: glyphW,
+                  height: glyphH,
+                  transform: `translate(-50%, -50%) scale(${transform.scale})`,
+                }}
+              >
+                <OctopusNodeGlyph node={node} />
+              </div>
+            );
+          })}
+        </div>
 
         {/* Canvas toolbar — top-left action buttons */}
         <div className="canvas-toolbar" role="toolbar" aria-label="Canvas actions">

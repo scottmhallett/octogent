@@ -20,6 +20,7 @@ import {
 } from "./projectPersistence";
 import { readSetupState, setDefaultAgentProvider } from "./setupState";
 import { collectStartupPrerequisiteReport } from "./startupPrerequisites";
+import { hasOctogentCodexHooks } from "./terminalRuntime/codexHooks";
 
 const PROVIDER_LABELS: Record<TerminalAgentProvider, string> = {
   codex: "Codex",
@@ -113,6 +114,7 @@ export const readWorkspaceSetupSnapshot = (
   const hasClaudeCode = prerequisites.availability.claude;
   const hasGit = prerequisites.availability.git;
   const hasCurl = prerequisites.availability.curl;
+  const hasCodexHooks = hasOctogentCodexHooks(workspaceCwd);
   const providerResolution = resolveDefaultAgentProvider(
     projectStateDir,
     prerequisites.availability,
@@ -122,17 +124,21 @@ export const readWorkspaceSetupSnapshot = (
     id: "check-codex",
     title: "Check Codex",
     description: "Verify the Codex workflow is available on this machine.",
-    complete: hasCodex && isCodexVerified,
+    complete: hasCodex && isCodexVerified && hasCodexHooks,
     required: providerResolution.defaultAgentProvider === "codex",
     actionLabel: "Check Codex",
     statusText: hasCodex
-      ? isCodexVerified
-        ? "Codex is available."
-        : "Confirm Codex before using it as the planner."
+      ? isCodexVerified && hasCodexHooks
+        ? "Codex is available and Octogent hooks are installed."
+        : hasCodexHooks
+          ? "Confirm Codex before using it as the planner."
+          : "Install Octogent Codex hooks before using Codex as the planner."
       : "Codex is unavailable.",
     guidance: hasCodex
       ? isCodexVerified
-        ? null
+        ? hasCodexHooks
+          ? null
+          : "Initialize the workspace to install Octogent Codex hooks, then review them with `/hooks` if Codex prompts."
         : "Click to verify the Codex workflow on this machine."
       : "Install Codex and run `codex login` before using Codex terminals.",
     command: hasCodex ? null : "codex login",

@@ -14,6 +14,7 @@ import {
   readWorkspaceSetupSnapshot,
   setDefaultAgentProvider,
 } from "../setupStatus";
+import { installCodexHooksInDirectory } from "../terminalRuntime/codexHooks";
 import type { ApiRouteHandler } from "./routeHelpers";
 import {
   readJsonBodyOrWriteError,
@@ -37,7 +38,7 @@ const isWorkspaceSetupStepId = (value: string): value is WorkspaceSetupStepId =>
 
 export const handleWorkspaceSetupRoute: ApiRouteHandler = async (
   { request, response, requestUrl, corsOrigin },
-  { workspaceCwd, projectStateDir },
+  { workspaceCwd, projectStateDir, getApiBaseUrl },
 ) => {
   if (requestUrl.pathname === WORKSPACE_SETUP_PATH) {
     if (request.method === "GET") {
@@ -106,14 +107,13 @@ export const handleWorkspaceSetupRoute: ApiRouteHandler = async (
 
   if (stepId === "initialize-workspace") {
     initializeWorkspaceFiles(workspaceCwd, projectStateDir);
+    installCodexHooksInDirectory(workspaceCwd, getApiBaseUrl());
   } else if (stepId === "ensure-gitignore") {
     ensureWorkspaceGitignore(workspaceCwd);
-  } else if (
-    stepId === "check-codex" ||
-    stepId === "check-claude" ||
-    stepId === "check-git" ||
-    stepId === "check-curl"
-  ) {
+  } else if (stepId === "check-codex") {
+    installCodexHooksInDirectory(workspaceCwd, getApiBaseUrl());
+    markSetupStepVerified(projectStateDir, stepId);
+  } else if (stepId === "check-claude" || stepId === "check-git" || stepId === "check-curl") {
     markSetupStepVerified(projectStateDir, stepId);
   }
 
@@ -162,7 +162,7 @@ export const handleUiStateRoute: ApiRouteHandler = async (
 };
 
 const HOOK_PATH_PATTERN =
-  /^\/api\/hooks\/(session-start|user-prompt-submit|pre-tool-use|notification|stop)$/;
+  /^\/api\/hooks\/(session-start|user-prompt-submit|pre-tool-use|permission-request|post-tool-use|notification|stop)$/;
 
 export const handleHookRoute: ApiRouteHandler = async (
   { request, response, requestUrl, corsOrigin },
