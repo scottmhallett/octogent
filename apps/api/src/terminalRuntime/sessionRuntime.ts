@@ -152,6 +152,68 @@ export const createSessionRuntime = ({
     session.transcriptLog.write(`${JSON.stringify(payload)}\n`);
   };
 
+  const nextTranscriptEventOrdinal = (session: TerminalSession) =>
+    (session.transcriptEventCount ?? 0) + 1;
+
+  const normalizeSubmittedInput = (value: string): string =>
+    value
+      .replaceAll(`${String.fromCharCode(27)}[200~`, "")
+      .replaceAll(`${String.fromCharCode(27)}[201~`, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n");
+
+  const appendInputSubmitEvent = (session: TerminalSession, sessionId: string, text: string) => {
+    const normalized = normalizeSubmittedInput(text);
+    if (normalized.trim().length === 0) {
+      return;
+    }
+
+    appendTranscriptEvent(session, sessionId, {
+      type: "input_submit",
+      submitId: `${sessionId}:input:${nextTranscriptEventOrdinal(session)}`,
+      text: normalized,
+      timestamp: new Date().toISOString(),
+    });
+  };
+
+  const observeInputForTranscript = (
+    session: TerminalSession,
+    sessionId: string,
+    input: string,
+  ) => {
+    const normalizedInput = input
+      .replaceAll(`${String.fromCharCode(27)}[200~`, "")
+      .replaceAll(`${String.fromCharCode(27)}[201~`, "");
+    let ignoreLineFeedAfterCarriageReturn = false;
+
+    for (const character of Array.from(normalizedInput)) {
+      if (character === "\r") {
+        appendInputSubmitEvent(session, sessionId, session.pendingInput ?? "");
+        session.pendingInput = "";
+        ignoreLineFeedAfterCarriageReturn = true;
+        continue;
+      }
+
+      if (character === "\n") {
+        if (ignoreLineFeedAfterCarriageReturn) {
+          ignoreLineFeedAfterCarriageReturn = false;
+          continue;
+        }
+        session.pendingInput = `${session.pendingInput ?? ""}\n`;
+        continue;
+      }
+
+      ignoreLineFeedAfterCarriageReturn = false;
+
+      if (character === "\b" || character === "\u007F") {
+        session.pendingInput = (session.pendingInput ?? "").slice(0, -1);
+        continue;
+      }
+
+      session.pendingInput = `${session.pendingInput ?? ""}${character}`;
+    }
+  };
+
   const closeTranscript = (
     session: TerminalSession,
     sessionId: string,
@@ -499,6 +561,7 @@ export const createSessionRuntime = ({
             sessionId,
             () => {
               appendDebugLog(session, `initial-prompt-submit session=${sessionId}`);
+              appendInputSubmitEvent(session, sessionId, prompt);
               session.pty.write("\r");
             },
             INITIAL_PROMPT_SUBMIT_DELAY_MS,
@@ -617,6 +680,12 @@ export const createSessionRuntime = ({
       type: "session_start",
       timestamp: new Date().toISOString(),
     });
+    if (launch.promptDelivery === "argv") {
+      const argvPrompt = terminalRecord?.initialPrompt ?? terminalRecord?.initialInputDraft;
+      if (argvPrompt) {
+        appendInputSubmitEvent(session, sessionId, argvPrompt);
+      }
+    }
     session.statePollTimer = setInterval(() => {
       emitStateIfChanged(session, sessionId, session.stateTracker.poll(Date.now()));
     }, 300);
@@ -627,6 +696,12 @@ export const createSessionRuntime = ({
       }
 
       appendDebugLog(session, `pty-output session=${sessionId} chunk=${JSON.stringify(chunk)}`);
+      appendTranscriptEvent(session, sessionId, {
+        type: "output_chunk",
+        chunkId: `${sessionId}:output:${nextTranscriptEventOrdinal(session)}`,
+        text: chunk,
+        timestamp: new Date().toISOString(),
+      });
       appendScrollback(session, chunk);
       const nextState = session.stateTracker.observeChunk(chunk, Date.now());
       broadcastMessage(session, {
@@ -731,6 +806,7 @@ export const createSessionRuntime = ({
               `ws-input session=${sessionId} data=${JSON.stringify(payload.data)}`,
             );
             session.pty.write(payload.data);
+            observeInputForTranscript(session, sessionId, payload.data);
             if (/[\r\n]/.test(payload.data)) {
               emitStateIfChanged(
                 session,

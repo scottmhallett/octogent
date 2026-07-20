@@ -224,16 +224,16 @@
   fill: #ff5722;
 }
 
-.console-status-claude-usage {
+.console-status-provider-usage {
   display: flex;
   align-items: center;
   gap: 0.4rem;
   justify-self: end;
-  min-width: 280px;
-  max-width: 400px;
+  min-width: 340px;
+  max-width: 520px;
 }
 
-.console-status-claude-usage-refresh {
+.console-status-provider-usage-refresh {
   background: none;
   border: 1px solid #3a3f4b;
   color: #6f7782;
@@ -246,16 +246,16 @@
   transition: color 0.15s, border-color 0.15s;
 }
 
-.console-status-claude-usage-refresh:hover {
+.console-status-provider-usage-refresh:hover {
   color: #e8e8e8;
   border-color: #6f7782;
 }
 
-.console-status-claude-usage-refresh[data-refreshing="true"] {
+.console-status-provider-usage-refresh[data-refreshing="true"] {
   animation: console-status-refresh-spin 0.9s linear infinite;
 }
 
-.console-status-claude-usage-title {
+.console-status-provider-usage-title {
   color: #6f7782;
   font-size: 0.72rem;
   font-weight: 700;
@@ -266,12 +266,36 @@
   flex-shrink: 0;
 }
 
-.console-status-claude-usage-bars {
+.console-status-provider-usage-list {
   display: flex;
   flex-direction: column;
   justify-content: center;
   gap: 0.22rem;
   flex: 1;
+  min-width: 0;
+}
+
+.console-status-provider-usage-provider {
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.34rem;
+  min-width: 0;
+}
+
+.console-status-provider-usage-provider-label {
+  color: color-mix(in srgb, var(--text-primary) 72%, #f0dcb2 28%);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.console-status-provider-usage-bars {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.34rem;
   min-width: 0;
 }
 

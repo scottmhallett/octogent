@@ -55,10 +55,10 @@ const parseHooksConfig = (fileContents: string): Record<string, unknown> | null 
 };
 
 const hookCommand = (apiBaseUrl: string, hookName: string) =>
-  `curl -s -X POST "${apiBaseUrl}/api/hooks/${hookName}?octogent_session=$OCTOGENT_SESSION_ID" -H 'Content-Type: application/json' -d @- || true`;
+  `curl -s -o /dev/null -X POST "${apiBaseUrl}/api/hooks/${hookName}?octogent_session=$OCTOGENT_SESSION_ID" -H 'Content-Type: application/json' -d @- || true`;
 
 const codeIntelCommand = (apiBaseUrl: string) =>
-  `curl -s -X POST "${apiBaseUrl}/api/code-intel/events" -H "X-Octogent-Session: $OCTOGENT_SESSION_ID" -H 'Content-Type: application/json' -d @- || true`;
+  `curl -s -o /dev/null -X POST "${apiBaseUrl}/api/code-intel/events" -H "X-Octogent-Session: $OCTOGENT_SESSION_ID" -H 'Content-Type: application/json' -d @- || true`;
 
 export const buildCodexHooksConfig = (apiBaseUrl: string): CodexHooksConfig => ({
   hooks: {

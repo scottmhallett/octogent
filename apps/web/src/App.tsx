@@ -283,7 +283,7 @@ export const App = () => {
     };
   }, [refreshColumns, runtimeStateStore, sortTerminalSnapshots]);
 
-  const { codexUsageSnapshot, refreshCodexUsage } = useCodexUsagePolling();
+  const { codexUsageSnapshot, isRefreshingCodexUsage, refreshCodexUsage } = useCodexUsagePolling();
   const { claudeUsageSnapshot, isRefreshingClaudeUsage, refreshClaudeUsage } =
     useClaudeUsagePolling();
   const backendLivenessStatus = useBackendLivenessPolling();
@@ -415,8 +415,11 @@ export const App = () => {
           sparklinePoints={sparklinePoints}
           usageData={heatmapData}
           claudeUsage={claudeUsageSnapshot}
+          codexUsage={codexUsageSnapshot}
           isRefreshingClaudeUsage={isRefreshingClaudeUsage}
+          isRefreshingCodexUsage={isRefreshingCodexUsage}
           onRefreshClaudeUsage={refreshClaudeUsage}
+          onRefreshCodexUsage={refreshCodexUsage}
         />
       )}
 

@@ -24,12 +24,16 @@ export const useCodexUsagePolling = () => {
     return lastOkRef.current ?? snapshot;
   };
 
-  const { data, refresh } = usePollingData<CodexUsageSnapshot>({
+  const { data, isLoading, refresh } = usePollingData<CodexUsageSnapshot>({
     fetchUrl: buildCodexUsageUrl(),
     intervalMs: CODEX_USAGE_SCAN_INTERVAL_MS,
     normalize,
     fallback,
   });
 
-  return { codexUsageSnapshot: data, refreshCodexUsage: refresh };
+  return {
+    codexUsageSnapshot: data,
+    isRefreshingCodexUsage: isLoading,
+    refreshCodexUsage: refresh,
+  };
 };

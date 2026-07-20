@@ -297,6 +297,12 @@ a.console-telemetry-item:focus-visible {
     gap: 0.28rem;
   }
 
+  .console-shell .console-status-provider-usage {
+    justify-self: stretch;
+    min-width: 0;
+    max-width: 100%;
+  }
+
   .console-shell .console-primary-nav {
     grid-template-columns: 1fr;
   }

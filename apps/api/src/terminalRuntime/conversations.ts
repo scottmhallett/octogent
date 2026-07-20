@@ -280,6 +280,125 @@ const truncatePreview = (value: string | null): string | null => {
   return `${normalized.slice(0, 157)}...`;
 };
 
+const ESCAPE_CHARACTER = String.fromCharCode(27);
+const BELL_CHARACTER = String.fromCharCode(7);
+const ANSI_CSI_RE = new RegExp(`${ESCAPE_CHARACTER}\\[[0-?]*[ -/]*[@-~]`, "g");
+const ANSI_OSC_RE = new RegExp(
+  `${ESCAPE_CHARACTER}\\][^${BELL_CHARACTER}]*(?:${BELL_CHARACTER}|${ESCAPE_CHARACTER}\\\\)`,
+  "g",
+);
+const ANSI_SINGLE_CHAR_RE = new RegExp(`${ESCAPE_CHARACTER}[@-_]`, "g");
+
+const stripControlCharacters = (value: string): string =>
+  Array.from(value)
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code === 10 || code === 9 || (code > 31 && code !== 127);
+    })
+    .join("");
+
+const normalizeTranscriptText = (value: string): string =>
+  stripControlCharacters(
+    value
+      .replaceAll(`${ESCAPE_CHARACTER}[200~`, "")
+      .replaceAll(`${ESCAPE_CHARACTER}[201~`, "")
+      .replace(ANSI_OSC_RE, "")
+      .replace(ANSI_CSI_RE, "")
+      .replace(ANSI_SINGLE_CHAR_RE, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\r/g, "\n"),
+  )
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+const buildTurnsFromTranscriptEvents = (
+  events: ConversationTranscriptEvent[],
+): ConversationTurn[] => {
+  const turns: ConversationTurn[] = [];
+  let pendingAssistantStartedAt: string | null = null;
+  let pendingAssistantText = "";
+  let hasUserTurn = false;
+
+  const flushAssistant = (endedAt: string) => {
+    const content = normalizeTranscriptText(pendingAssistantText);
+    if (hasUserTurn && content.length > 0 && pendingAssistantStartedAt) {
+      turns.push({
+        turnId: `turn-${turns.length + 1}`,
+        role: "assistant",
+        content,
+        startedAt: pendingAssistantStartedAt,
+        endedAt,
+      });
+    }
+    pendingAssistantText = "";
+    pendingAssistantStartedAt = null;
+  };
+
+  for (const event of events) {
+    if (event.type === "input_submit") {
+      flushAssistant(event.timestamp);
+      const content = normalizeTranscriptText(event.text);
+      if (content.length > 0) {
+        turns.push({
+          turnId: `turn-${turns.length + 1}`,
+          role: "user",
+          content,
+          startedAt: event.timestamp,
+          endedAt: event.timestamp,
+        });
+        hasUserTurn = true;
+      }
+      continue;
+    }
+
+    if (event.type === "output_chunk") {
+      if (!hasUserTurn) {
+        continue;
+      }
+
+      if (!pendingAssistantStartedAt) {
+        pendingAssistantStartedAt = event.timestamp;
+      }
+      pendingAssistantText = `${pendingAssistantText}${event.text}`;
+      continue;
+    }
+
+    if (event.type === "session_end") {
+      flushAssistant(event.timestamp);
+    }
+  }
+
+  const lastEvent = events.length > 0 ? events[events.length - 1] : null;
+  if (lastEvent) {
+    flushAssistant(lastEvent.timestamp);
+  }
+
+  return turns;
+};
+
+const readConversationTurns = (
+  transcriptDirectoryPath: string,
+  sessionId: string,
+  events: ConversationTranscriptEvent[],
+): ConversationTurn[] => {
+  const claudeTurns = readClaudeTranscriptTurns(transcriptDirectoryPath, sessionId);
+  if (claudeTurns?.some((turn) => turn.role === "user")) {
+    return claudeTurns;
+  }
+
+  const transcriptTurns = buildTurnsFromTranscriptEvents(events);
+  if (transcriptTurns.some((turn) => turn.role === "user")) {
+    return transcriptTurns;
+  }
+
+  if (claudeTurns) {
+    return claudeTurns;
+  }
+
+  return transcriptTurns;
+};
+
 export const readConversationSession = (
   transcriptDirectoryPath: string,
   sessionId: string,
@@ -289,8 +408,7 @@ export const readConversationSession = (
     return null;
   }
 
-  // Only use clean turns from Claude Code's structured transcript (via Stop hook).
-  const turns = readClaudeTranscriptTurns(transcriptDirectoryPath, sessionId) ?? [];
+  const turns = readConversationTurns(transcriptDirectoryPath, sessionId, events);
   const summary = buildConversationSummary(sessionId, events, turns);
 
   return {
@@ -468,7 +586,8 @@ export const searchConversations = (
     .filter((sessionId): sessionId is string => sessionId !== null);
 
   for (const sessionId of sessionIds) {
-    const turns = readClaudeTranscriptTurns(transcriptDirectoryPath, sessionId) ?? [];
+    const events = readSessionEventsFromFile(transcriptDirectoryPath, sessionId);
+    const turns = readConversationTurns(transcriptDirectoryPath, sessionId, events);
     for (const turn of turns) {
       if (turn.content.toLowerCase().includes(lowerQuery)) {
         hits.push({

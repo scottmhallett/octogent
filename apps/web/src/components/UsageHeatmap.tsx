@@ -523,6 +523,8 @@ export const UsageBarChart = ({ data, isLoading, onRefresh }: UsageChartSectionP
   const days = data?.days ?? [];
   const projects = data?.projects ?? [];
   const models = data?.models ?? [];
+  const usageTitle = data?.estimated ? "Estimated Token Usage" : "Token Usage";
+  const usageAriaLabel = data?.estimated ? "Estimated token usage chart" : "Token usage chart";
 
   const segmentKeys = segmentMode === "model" ? models : projects;
 
@@ -573,10 +575,10 @@ export const UsageBarChart = ({ data, isLoading, onRefresh }: UsageChartSectionP
   }, [days, totalTokens, totalSessions, models, projects]);
 
   return (
-    <section className="usage-heatmap" aria-label="Claude token usage chart">
+    <section className="usage-heatmap" aria-label={usageAriaLabel}>
       <header className="usage-heatmap-header">
         <div className="usage-heatmap-header-left">
-          <h3>Claude Token Usage</h3>
+          <h3>{usageTitle}</h3>
           <span className="usage-heatmap-summary">
             {formatTokenCount(totalTokens)} tokens across {activeDays} days, {totalSessions}{" "}
             sessions
