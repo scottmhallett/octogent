@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 
+import type { AgentRuntimeState } from "@octogent/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { createShellEnvironmentMock, ensureSpawnHelperMock, spawnMock } = vi.hoisted(() => ({
@@ -22,8 +23,13 @@ vi.mock("../src/terminalRuntime/ptyEnvironment", () => ({
   ensureNodePtySpawnHelperExecutable: ensureSpawnHelperMock,
 }));
 
+import type { ConversationTranscriptEventPayload } from "../src/terminalRuntime/conversations";
 import { createSessionRuntime } from "../src/terminalRuntime/sessionRuntime";
-import type { PersistedTerminal, TerminalSession } from "../src/terminalRuntime/types";
+import type {
+  AgentSessionProcess,
+  PersistedTerminal,
+  TerminalSession,
+} from "../src/terminalRuntime/types";
 
 class FakePty extends EventEmitter {
   write = vi.fn();
@@ -54,6 +60,34 @@ class FakePty extends EventEmitter {
 
   emitExit(event: { exitCode: number; signal: number }) {
     this.emit("exit", event);
+  }
+}
+
+class FakeAgentProcess extends FakePty implements AgentSessionProcess {
+  onState(listener: (state: AgentRuntimeState, toolName?: string) => void) {
+    this.on("state", listener);
+    return {
+      dispose: () => {
+        this.off("state", listener);
+      },
+    };
+  }
+
+  onTranscriptEvent(listener: (event: ConversationTranscriptEventPayload) => void) {
+    this.on("transcriptEvent", listener);
+    return {
+      dispose: () => {
+        this.off("transcriptEvent", listener);
+      },
+    };
+  }
+
+  emitState(state: AgentRuntimeState, toolName?: string) {
+    this.emit("state", state, toolName);
+  }
+
+  emitTranscriptEvent(event: ConversationTranscriptEventPayload) {
+    this.emit("transcriptEvent", event);
   }
 }
 
@@ -101,6 +135,30 @@ const createUpgradeRequest = (tentacleId: string) =>
 
 const parseSentMessages = (socket: FakeWebSocket) =>
   socket.sentMessages.map((raw) => JSON.parse(raw) as { type: string; data?: string });
+
+const readTranscriptEvents = async (
+  transcriptDirectoryPath: string,
+  tentacleId: string,
+): Promise<Array<{ type: string; text?: string; reason?: string; state?: string }>> => {
+  const transcriptPath = join(transcriptDirectoryPath, `${encodeURIComponent(tentacleId)}.jsonl`);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (existsSync(transcriptPath)) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  return existsSync(transcriptPath)
+    ? readFileSync(transcriptPath, "utf8")
+        .trim()
+        .split(/\r?\n/)
+        .filter((line) => line.length > 0)
+        .map(
+          (line) =>
+            JSON.parse(line) as { type: string; text?: string; reason?: string; state?: string },
+        )
+    : [];
+};
 
 describe("createSessionRuntime", () => {
   const temporaryDirectories: string[] = [];
@@ -544,6 +602,173 @@ describe("createSessionRuntime", () => {
     expect(pty.write).not.toHaveBeenCalled();
 
     runtime.close();
+  });
+
+  it("uses the Codex app-server process when explicitly enabled", () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+          agentProvider: "codex",
+          initialPrompt: "Investigate and report back.",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const fakeProcess = new FakeAgentProcess();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+    const workspaceCwd = process.cwd();
+    const createCodexAppServerProcess = vi.fn(() => fakeProcess);
+    const onStateChange = vi.fn();
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => workspaceCwd,
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+      codexRuntimeMode: "app-server",
+      createCodexAppServerProcess,
+      onStateChange,
+    });
+
+    expect(runtime.startSession(tentacleId)).toBe(true);
+
+    expect(createCodexAppServerProcess).toHaveBeenCalledWith({
+      cwd: workspaceCwd,
+      initialPrompt: "Investigate and report back.",
+    });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(ensureSpawnHelperMock).not.toHaveBeenCalled();
+
+    fakeProcess.emitState("waiting_for_permission", "apply_patch");
+    expect(onStateChange).toHaveBeenCalledWith(tentacleId, "waiting_for_permission", "apply_patch");
+
+    runtime.close();
+  });
+
+  it("records transcript events emitted by the Codex app-server process", async () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+          agentProvider: "codex",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const fakeProcess = new FakeAgentProcess();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => process.cwd(),
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+      codexRuntimeMode: "app-server",
+      createCodexAppServerProcess: () => fakeProcess,
+    });
+
+    expect(runtime.startSession(tentacleId)).toBe(true);
+
+    fakeProcess.emitTranscriptEvent({
+      type: "input_submit",
+      submitId: "codex-app-server:input:1",
+      text: "Say hello",
+      timestamp: new Date().toISOString(),
+    });
+    fakeProcess.emitTranscriptEvent({
+      type: "output_chunk",
+      chunkId: "codex-app-server:output:1",
+      text: "Hello",
+      timestamp: new Date().toISOString(),
+    });
+    fakeProcess.emitState("processing");
+    runtime.close();
+
+    const transcriptEvents = await readTranscriptEvents(transcriptDirectoryPath, tentacleId);
+    expect(
+      transcriptEvents.some((event) => event.type === "input_submit" && event.text === "Say hello"),
+    ).toBe(true);
+    expect(
+      transcriptEvents.some((event) => event.type === "output_chunk" && event.text === "Hello"),
+    ).toBe(true);
+    expect(
+      transcriptEvents.some(
+        (event) => event.type === "state_change" && event.state === "processing",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not duplicate submitted input from websocket writes in Codex app-server mode", async () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+          agentProvider: "codex",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const fakeProcess = new FakeAgentProcess();
+    const transcriptDirectoryPath = createTemporaryDirectory();
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => process.cwd(),
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+      codexRuntimeMode: "app-server",
+      createCodexAppServerProcess: () => fakeProcess,
+    });
+
+    const socket = new FakeWebSocket();
+    websocketServer.nextSocket = socket;
+    expect(
+      runtime.handleUpgrade(createUpgradeRequest(tentacleId), {} as Duplex, Buffer.alloc(0)),
+    ).toBe(true);
+
+    socket.emit("message", JSON.stringify({ type: "input", data: "hello\r" }));
+    expect(fakeProcess.write).toHaveBeenCalledWith("hello\r");
+    runtime.close();
+
+    const transcriptEvents = await readTranscriptEvents(transcriptDirectoryPath, tentacleId);
+    expect(transcriptEvents.some((event) => event.type === "input_submit")).toBe(false);
   });
 
   it("enforces the configured max concurrent terminal sessions before spawning", () => {

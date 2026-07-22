@@ -10,7 +10,9 @@ flowchart TD
   Browser --> WS[WebSocket terminal stream]
   HTTP --> Runtime[Terminal runtime]
   WS --> Runtime
-  Runtime --> PTY[PTY sessions]
+  Runtime --> Sessions[Agent sessions]
+  Sessions --> PTY[PTY sessions]
+  Sessions --> Codex[Codex app-server]
   Runtime --> Files["Project and global state"]
   Runtime --> Hooks[Claude hook ingestion]
 ```
@@ -20,7 +22,7 @@ flowchart TD
 The API process owns the moving parts that cannot live in markdown:
 
 - terminal registry loading, migration, and persistence
-- PTY lifecycle and scrollback
+- agent session lifecycle and scrollback
 - WebSocket upgrades for terminal IO and terminal list events
 - Claude hook installation and ingestion
 - worktree creation and cleanup for isolated terminals
@@ -32,11 +34,11 @@ The API process owns the moving parts that cannot live in markdown:
 ## Transport model
 
 - HTTP handles CRUD, snapshots, prompt resolution, setup checks, and file-backed operations
-- `WS /api/terminals/:terminalId/ws` attaches a browser terminal to one PTY session
+- `WS /api/terminals/:terminalId/ws` attaches a browser terminal to one live agent session
 - `WS /api/terminal-events/ws` broadcasts terminal-created, terminal-updated, terminal-deleted, and state-change events
 - file-backed state is the restart boundary for terminal records, UI state, transcripts, deck metadata, and monitor/cache data
 
-Terminal WebSockets do not own the PTY. They are clients attached to a PTY session owned by the API process. When a browser reloads, a new WebSocket can receive scrollback during the idle grace window. When the API restarts, the PTY is gone.
+Terminal WebSockets do not own the agent process. They are clients attached to a session owned by the API process. When a browser reloads, a new WebSocket can receive scrollback during the idle grace window. When the API restarts, the live session is gone.
 
 ## Security defaults
 
@@ -49,7 +51,7 @@ Terminal WebSockets do not own the PTY. They are clients attached to a PTY sessi
 - project-local scaffold lives under `.octogent/`
 - runtime state lives under `~/.octogent/projects/<project-id>/state/`
 - transcript events persist independently from PTY scrollback
-- PTY sessions do not survive API restarts
+- live agent sessions do not survive API restarts
 - terminal records persisted as `running` are reconciled to `stale` on startup when no live Octogent session owns them
 
 The terminal registry is `tentacles.json` for historical reasons. Current records are terminals, not tentacles. A terminal record stores identity, tentacle ID, optional worktree ID, parent terminal ID, workspace mode, display name, lifecycle fields, and UI-related metadata.
@@ -60,20 +62,25 @@ Deck metadata is separate from tentacle markdown. `deck.json` stores display/sta
 
 Creating a terminal writes a registry record first. If an initial prompt is provided, the runtime immediately starts a PTY session. Otherwise, the PTY starts when a WebSocket or direct listener attaches.
 
-When a PTY starts, Octogent:
+When an agent session starts, Octogent:
 
 1. resolves the working directory from the terminal workspace mode
-2. spawns the user's shell through `node-pty`
-3. injects the configured agent bootstrap command
-4. optionally pastes and submits an initial prompt
+2. starts the selected provider, usually through `node-pty`
+3. injects the configured agent bootstrap command when the provider uses PTY mode
+4. optionally passes, pastes, or submits an initial prompt
 5. writes transcript events and keeps bounded scrollback in memory
 6. broadcasts state updates to attached clients
+
+Codex also has an experimental native driver over `codex app-server`. It is
+disabled by default; set `OCTOGENT_CODEX_RUNTIME=app-server` before starting
+Octogent to use it for Codex-backed terminals. Claude and default Codex
+sessions continue to use the PTY path.
 
 Stopping or killing a terminal tears down the active PTY and updates lifecycle metadata. Deleting a terminal also cascades to child terminals and removes worktrees for worktree-backed records.
 
 ## Hook mechanism
 
-For Claude-backed terminals, Octogent writes hooks into the target `.claude/settings.json`. The hooks call back into the local API and provide state transitions that terminal output alone cannot reliably express.
+For Claude-backed terminals, Octogent writes hooks into the target `.claude/settings.json`. Codex-backed terminals can use `.codex/hooks.json` in PTY mode or native app-server events in experimental app-server mode. These callbacks and events call back into the local API and provide state transitions that terminal output alone cannot reliably express.
 
 Hooks currently feed these mechanisms:
 
