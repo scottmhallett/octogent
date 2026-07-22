@@ -106,7 +106,7 @@ export const useTerminalMutations = ({
         const nextColumns = await readColumns();
         setColumns(nextColumns);
         setEditingTerminalId(null);
-      } catch {
+      } catch (_error) {
         setLoadError("Unable to rename terminal.");
       }
     },
@@ -161,7 +161,7 @@ export const useTerminalMutations = ({
         setMinimizedTerminalIds((current) => current.filter((id) => id !== createdTerminalId));
         beginTerminalNameEdit(createdTerminalId, createdTerminalName);
         return createdTerminalId;
-      } catch {
+      } catch (_error) {
         setLoadError("Unable to create a new terminal.");
         return undefined;
       } finally {
@@ -223,7 +223,7 @@ export const useTerminalMutations = ({
       const nextColumns = await readColumns();
       setColumns(nextColumns);
       setPendingDeleteTerminal(null);
-    } catch {
+    } catch (_error) {
       setLoadError("Unable to delete terminal.");
     } finally {
       setIsDeletingTerminalId(null);

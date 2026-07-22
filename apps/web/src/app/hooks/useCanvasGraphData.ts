@@ -173,7 +173,7 @@ export const useCanvasGraphData = ({
         .map((entry) => normalizeDeckTentacleSummary(entry))
         .filter((entry): entry is DeckTentacleSummary => entry !== null);
       setDeckTentacles(items);
-    } catch {
+    } catch (_error) {
       // silent
     }
   }, []);
@@ -192,7 +192,7 @@ export const useCanvasGraphData = ({
             .filter((entry): entry is ConversationSessionSummary => entry !== null)
         : [];
       setInactiveSessions(normalized);
-    } catch {
+    } catch (_error) {
       // silent
     }
   }, []);

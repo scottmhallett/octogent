@@ -78,7 +78,7 @@ export const TerminalPromptPicker = ({
         const data = (await res.json()) as PromptDetail;
         onSelectPrompt(data.content);
         onClose();
-      } catch {
+      } catch (_error) {
         // Silently fail
       }
     },

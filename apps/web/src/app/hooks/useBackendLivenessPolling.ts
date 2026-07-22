@@ -29,7 +29,7 @@ export const useBackendLivenessPolling = (): BackendLivenessStatus => {
         if (!isDisposed) {
           setStatus(response.ok ? "live" : "offline");
         }
-      } catch {
+      } catch (_error) {
         if (!isDisposed) {
           setStatus("offline");
         }

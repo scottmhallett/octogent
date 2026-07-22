@@ -255,7 +255,7 @@ export const usePersistedUiState = ({
       }
 
       return normalizeFrontendUiStateSnapshot(await response.json());
-    } catch {
+    } catch (_error) {
       return null;
     }
   }, []);

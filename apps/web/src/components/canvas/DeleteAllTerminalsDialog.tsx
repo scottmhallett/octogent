@@ -17,7 +17,7 @@ const readDeleteFailureMessage = async (response: Response, fallback: string) =>
     if (typeof payload.error === "string" && payload.error.trim().length > 0) {
       return payload.error;
     }
-  } catch {
+  } catch (_error) {
     // Ignore malformed error payloads and fall back to the status line.
   }
 

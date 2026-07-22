@@ -219,7 +219,7 @@ export const Terminal = ({
             onTerminalActivityRef.current?.(terminalId);
             return;
           }
-        } catch {
+        } catch (_error) {
           if (activeTerminal) {
             activeTerminal.write(event.data);
             return;
@@ -294,7 +294,7 @@ export const Terminal = ({
           const unicode11Addon = new Unicode11Addon();
           terminal.loadAddon(unicode11Addon);
           terminal.unicode.activeVersion = "11";
-        } catch {
+        } catch (_error) {
           // Non-critical: terminal works without unicode11, just with less accurate character widths
         }
         activeTerminal = terminal;
@@ -407,7 +407,7 @@ export const Terminal = ({
           fitAddonRef.current = null;
           requestResizeSyncRef.current = () => {};
         };
-      } catch {
+      } catch (_error) {
         setConnectionState("fallback");
       }
     })();

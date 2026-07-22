@@ -56,7 +56,7 @@ export const useTerminalCompletionNotification = (
           // Browsers can block untrusted audio playback; ignore and keep UI responsive.
         });
       }
-    } catch {
+    } catch (_error) {
       // Some environments throw synchronously for media playback; ignore.
     }
   }, []);

@@ -47,7 +47,7 @@ const parseGitError = async (response: Response, fallback: string) => {
     if (typeof payload.error === "string" && payload.error.trim().length > 0) {
       return payload.error.trim();
     }
-  } catch {
+  } catch (_error) {
     return fallback;
   }
 
