@@ -140,7 +140,7 @@ export const CanvasTentaclePanel = ({
         });
         if (!response.ok) return;
         await refreshTentacleData();
-      } catch {
+      } catch (_error) {
         // silent
       }
     },
@@ -159,7 +159,7 @@ export const CanvasTentaclePanel = ({
         if (!response.ok) return;
         setEditingIndex(null);
         await refreshTentacleData();
-      } catch {
+      } catch (_error) {
         // silent
       }
     },
@@ -179,7 +179,7 @@ export const CanvasTentaclePanel = ({
         setAddingTodo(false);
         setAddText("");
         await refreshTentacleData();
-      } catch {
+      } catch (_error) {
         // silent
       }
     },
@@ -196,7 +196,7 @@ export const CanvasTentaclePanel = ({
         });
         if (!response.ok) return;
         await refreshTentacleData();
-      } catch {
+      } catch (_error) {
         // silent
       }
     },
@@ -214,7 +214,7 @@ export const CanvasTentaclePanel = ({
         });
         if (!response.ok) return;
         onSolveTodoItem?.(node.tentacleId, itemIndex);
-      } catch {
+      } catch (_error) {
         // silent
       } finally {
         setSolvingTodoIndex((current) => (current === itemIndex ? null : current));

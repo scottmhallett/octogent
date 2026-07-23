@@ -62,7 +62,7 @@ export const App = () => {
 
   const sortTerminalSnapshots = useCallback(
     (snapshots: TerminalView) =>
-      [...snapshots].sort((left, right) => {
+      snapshots.slice().sort((left, right) => {
         return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
       }),
     [],
@@ -225,14 +225,12 @@ export const App = () => {
           if (payload.type === "terminal-created") {
             setRecentlyCreatedTerminal(structuralSnapshot as TerminalView[number]);
           }
-          setTerminals((current) =>
-            sortTerminalSnapshots([
-              ...current.filter(
-                (terminal) => terminal.terminalId !== structuralSnapshot.terminalId,
-              ),
-              structuralSnapshot,
-            ]),
-          );
+          setTerminals((current) => {
+            const filtered = current.filter(
+              (terminal) => terminal.terminalId !== structuralSnapshot.terminalId,
+            );
+            return sortTerminalSnapshots(filtered.concat([structuralSnapshot]));
+          });
           return;
         }
 
@@ -240,10 +238,17 @@ export const App = () => {
           if (!payload.terminalId || !isAgentRuntimeState(payload.agentRuntimeState)) {
             return;
           }
-          runtimeStateStore.setRuntimeState(payload.terminalId, {
+          const runtimeState = {
             state: payload.agentRuntimeState,
-            ...(payload.toolName ? { toolName: payload.toolName } : {}),
-          });
+          };
+          if (payload.toolName) {
+            runtimeStateStore.setRuntimeState(
+              payload.terminalId,
+              Object.assign({}, runtimeState, { toolName: payload.toolName }),
+            );
+          } else {
+            runtimeStateStore.setRuntimeState(payload.terminalId, runtimeState);
+          }
           return;
         }
 
@@ -261,7 +266,7 @@ export const App = () => {
         if (payload.type !== "terminal-list-changed") {
           return;
         }
-      } catch {
+      } catch (_error) {
         return;
       }
 
@@ -339,12 +344,16 @@ export const App = () => {
     hoveredGitHubOverviewPointIndex,
     setHoveredGitHubOverviewPointIndex,
   });
+  const openGitTentacleTerminal =
+    openGitTentacleId !== null
+      ? terminals.find((terminal) => terminal.tentacleId === openGitTentacleId)
+      : undefined;
+  const isOpenGitTentacleWorktree =
+    openGitTentacleTerminal !== undefined && openGitTentacleTerminal.workspaceMode === "worktree";
   const hasSidebarActionPanel =
     conversationsActionPanel !== null ||
     pendingDeleteTerminal !== null ||
-    (openGitTentacleId !== null &&
-      terminals.find((terminal) => terminal.tentacleId === openGitTentacleId)?.workspaceMode ===
-        "worktree");
+    isOpenGitTentacleWorktree;
 
   const sidebarActionPanel = hasSidebarActionPanel ? (
     conversationsActionPanel ? (
@@ -384,15 +393,25 @@ export const App = () => {
 
   const handleTerminalRenamed = useCallback((terminalId: string, tentacleName: string) => {
     setTerminals((current) =>
-      current.map((t) =>
-        t.terminalId === terminalId ? { ...t, tentacleName, label: tentacleName } : t,
-      ),
+      current.map((t) => {
+        if (t.terminalId !== terminalId) {
+          return t;
+        }
+
+        return Object.assign({}, t, { tentacleName, label: tentacleName });
+      }),
     );
   }, []);
 
   const handleTerminalActivity = useCallback((terminalId: string) => {
     setTerminals((current) =>
-      current.map((t) => (t.terminalId === terminalId ? { ...t, hasUserPrompt: true } : t)),
+      current.map((t) => {
+        if (t.terminalId !== terminalId) {
+          return t;
+        }
+
+        return Object.assign({}, t, { hasUserPrompt: true });
+      }),
     );
   }, []);
 
@@ -407,6 +426,21 @@ export const App = () => {
     },
     [runWorkspaceSetupStep],
   );
+
+  const sidebarBodyContent =
+    activePrimaryNav === 2
+      ? deckSidebarContent === null
+        ? undefined
+        : deckSidebarContent
+      : activePrimaryNav === 6
+        ? conversationsSidebarContent === null
+          ? undefined
+          : conversationsSidebarContent
+        : activePrimaryNav === 7
+          ? promptsSidebarContent === null
+            ? undefined
+            : promptsSidebarContent
+          : undefined;
 
   return (
     <div className="page console-shell">
@@ -444,15 +478,7 @@ export const App = () => {
                   setSidebarWidth(clampSidebarWidth(width));
                 }}
                 actionPanel={sidebarActionPanel}
-                bodyContent={
-                  activePrimaryNav === 2
-                    ? (deckSidebarContent ?? undefined)
-                    : activePrimaryNav === 6
-                      ? (conversationsSidebarContent ?? undefined)
-                      : activePrimaryNav === 7
-                        ? (promptsSidebarContent ?? undefined)
-                        : undefined
-                }
+                bodyContent={sidebarBodyContent}
               />
             )}
 

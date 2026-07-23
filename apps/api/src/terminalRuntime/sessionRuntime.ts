@@ -3,11 +3,12 @@ import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import type { Duplex } from "node:stream";
 
-import { type IPty, spawn } from "node-pty";
+import { spawn } from "node-pty";
 import type { WebSocket, WebSocketServer } from "ws";
 
 import { type AgentRuntimeState, AgentStateTracker } from "../agentStateDetection";
 import { buildAgentProviderLaunch } from "./agentProviderLaunch";
+import { createCodexAppServerAgentProcess } from "./codexAppServerSession";
 import {
   DEFAULT_AGENT_PROVIDER,
   TERMINAL_MAX_CONCURRENT_SESSIONS,
@@ -25,6 +26,7 @@ import { broadcastMessage, getTerminalId, sendMessage } from "./protocol";
 import { createShellEnvironment, ensureNodePtySpawnHelperExecutable } from "./ptyEnvironment";
 import { toErrorMessage } from "./systemClients";
 import type {
+  AgentSessionProcess,
   DirectSessionListener,
   PersistedTerminal,
   TerminalSession,
@@ -50,6 +52,12 @@ type CreateSessionRuntimeOptions = {
   onStateChange?: (terminalId: string, state: AgentRuntimeState, toolName?: string) => void;
   onSessionStart?: (terminalId: string, details: TerminalSessionStartDetails) => void;
   onSessionEnd?: (terminalId: string, details: TerminalSessionEndDetails) => void;
+  codexRuntimeMode?: "pty" | "app-server";
+  createCodexAppServerProcess?: (options: {
+    cwd: string;
+    initialPrompt?: string;
+    initialInputDraft?: string;
+  }) => AgentSessionProcess;
 };
 
 const ANSI_BEL = String.fromCharCode(0x07);
@@ -73,6 +81,8 @@ export const createSessionRuntime = ({
   onStateChange,
   onSessionStart,
   onSessionEnd,
+  codexRuntimeMode = process.env.OCTOGENT_CODEX_RUNTIME === "app-server" ? "app-server" : "pty",
+  createCodexAppServerProcess = createCodexAppServerAgentProcess,
 }: CreateSessionRuntimeOptions) => {
   const DEFAULT_PTY_COLS = 120;
   const DEFAULT_PTY_ROWS = 35;
@@ -613,28 +623,47 @@ export const createSessionRuntime = ({
       throw new Error(`Terminal working directory does not exist: ${tentacleCwd}`);
     }
 
-    ensureNodePtySpawnHelperExecutable();
     const shellLaunch = getShellLaunch();
     const provider = terminalRecord?.agentProvider ?? DEFAULT_AGENT_PROVIDER;
-    const launch = buildAgentProviderLaunch({
-      provider,
-      cwd: tentacleCwd,
-      ...(terminalRecord?.initialPrompt ? { initialPrompt: terminalRecord.initialPrompt } : {}),
-      ...(terminalRecord?.initialInputDraft
-        ? { initialInputDraft: terminalRecord.initialInputDraft }
-        : {}),
-      shellLaunch,
-    });
+    const useCodexAppServer = provider === "codex" && codexRuntimeMode === "app-server";
+    const launch = useCodexAppServer
+      ? {
+          command: "codex app-server",
+          args: [],
+          cwd: tentacleCwd,
+          label: "Codex app-server",
+          promptDelivery: "app-server" as const,
+        }
+      : buildAgentProviderLaunch({
+          provider,
+          cwd: tentacleCwd,
+          ...(terminalRecord?.initialPrompt ? { initialPrompt: terminalRecord.initialPrompt } : {}),
+          ...(terminalRecord?.initialInputDraft
+            ? { initialInputDraft: terminalRecord.initialInputDraft }
+            : {}),
+          shellLaunch,
+        });
 
-    let pty: IPty;
+    let pty: AgentSessionProcess;
     try {
-      pty = spawn(launch.command, launch.args, {
-        cols: DEFAULT_PTY_COLS,
-        rows: DEFAULT_PTY_ROWS,
-        cwd: launch.cwd,
-        env: createShellEnvironment({ octogentSessionId: sessionId }),
-        name: "xterm-256color",
-      });
+      if (useCodexAppServer) {
+        pty = createCodexAppServerProcess({
+          cwd: tentacleCwd,
+          ...(terminalRecord?.initialPrompt ? { initialPrompt: terminalRecord.initialPrompt } : {}),
+          ...(terminalRecord?.initialInputDraft
+            ? { initialInputDraft: terminalRecord.initialInputDraft }
+            : {}),
+        });
+      } else {
+        ensureNodePtySpawnHelperExecutable();
+        pty = spawn(launch.command, launch.args, {
+          cols: DEFAULT_PTY_COLS,
+          rows: DEFAULT_PTY_ROWS,
+          cwd: launch.cwd,
+          env: createShellEnvironment({ octogentSessionId: sessionId }),
+          name: "xterm-256color",
+        });
+      }
     } catch (error) {
       throw new Error(
         `Unable to start ${launch.label} terminal (${launch.command}): ${toErrorMessage(error)}`,
@@ -710,6 +739,13 @@ export const createSessionRuntime = ({
       });
       emitStateIfChanged(session, sessionId, nextState);
     });
+    const stateDisposable = session.pty.onState?.((state, toolName) => {
+      session.lastToolName = toolName;
+      emitStateIfChanged(session, sessionId, state);
+    });
+    const transcriptEventDisposable = session.pty.onTranscriptEvent?.((event) => {
+      appendTranscriptEvent(session, sessionId, event);
+    });
 
     const exitDisposable = session.pty.onExit(({ exitCode, signal }) => {
       if (session.isClosed) {
@@ -739,7 +775,12 @@ export const createSessionRuntime = ({
         { killPty: false },
       );
     });
-    session.ptyDisposables = [dataDisposable, exitDisposable];
+    session.ptyDisposables = [
+      dataDisposable,
+      ...(stateDisposable ? [stateDisposable] : []),
+      ...(transcriptEventDisposable ? [transcriptEventDisposable] : []),
+      exitDisposable,
+    ];
 
     // Propagate initial prompt from the terminal definition, if set.
     if (terminalRecord?.initialPrompt) {
@@ -806,8 +847,10 @@ export const createSessionRuntime = ({
               `ws-input session=${sessionId} data=${JSON.stringify(payload.data)}`,
             );
             session.pty.write(payload.data);
-            observeInputForTranscript(session, sessionId, payload.data);
-            if (/[\r\n]/.test(payload.data)) {
+            if (session.promptDelivery !== "app-server") {
+              observeInputForTranscript(session, sessionId, payload.data);
+            }
+            if (session.promptDelivery !== "app-server" && /[\r\n]/.test(payload.data)) {
               emitStateIfChanged(
                 session,
                 sessionId,
@@ -920,7 +963,7 @@ export const createSessionRuntime = ({
     }
 
     session.pty.write(data);
-    if (/[\r\n]/.test(data)) {
+    if (session.promptDelivery !== "app-server" && /[\r\n]/.test(data)) {
       emitStateIfChanged(session, terminalId, session.stateTracker.observeSubmit(Date.now()));
     }
     return true;

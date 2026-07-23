@@ -39,7 +39,7 @@ const toWebSocketBase = (runtimeBaseUrl: string): string | null => {
       return url.toString();
     }
     return null;
-  } catch {
+  } catch (_error) {
     return null;
   }
 };

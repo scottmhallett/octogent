@@ -108,7 +108,7 @@ export const DeckPrimaryView = ({
       const data = await response.json();
       setTentacles(data);
       await onRefreshWorkspaceSetup();
-    } catch {
+    } catch (_error) {
       // silently ignore
     }
   }, [onRefreshWorkspaceSetup]);
@@ -140,7 +140,7 @@ export const DeckPrimaryView = ({
         if (!cancelled) {
           setAvailableSkills(skills);
         }
-      } catch {
+      } catch (_error) {
         // silently ignore
       }
     };
@@ -185,7 +185,7 @@ export const DeckPrimaryView = ({
           setVaultContent(text);
           setLoadingVault(false);
         }
-      } catch {
+      } catch (_error) {
         if (!cancelled) {
           setVaultContent(null);
           setLoadingVault(false);
@@ -233,7 +233,7 @@ export const DeckPrimaryView = ({
         agentProvider: selectedAgent,
       });
       await fetchTentacles();
-    } catch {
+    } catch (_error) {
       // silently ignore
     } finally {
       setIsLaunchingAgent(false);
@@ -296,7 +296,7 @@ export const DeckPrimaryView = ({
         setEmptyViewMode("idle");
         await fetchTentacles();
         await onRefreshWorkspaceSetup();
-      } catch {
+      } catch (_error) {
         setCreateError("Network error");
       } finally {
         setIsCreating(false);
@@ -317,7 +317,7 @@ export const DeckPrimaryView = ({
         if (!response.ok) return false;
         await fetchTentacles();
         return true;
-      } catch {
+      } catch (_error) {
         return false;
       } finally {
         setSavingTentacleSkillsId((current) => (current === tentacleId ? null : current));
@@ -335,7 +335,7 @@ export const DeckPrimaryView = ({
         const response = await fetch(buildDeckTentacleUrl(tentacleId), { method: "DELETE" });
         if (!response.ok) return;
         await fetchTentacles();
-      } catch {
+      } catch (_error) {
         // silently ignore
       } finally {
         setDeletingTentacleId(null);
@@ -354,7 +354,7 @@ export const DeckPrimaryView = ({
         });
         if (!response.ok) return;
         await fetchTentacles();
-      } catch {
+      } catch (_error) {
         // silently ignore
       }
     },

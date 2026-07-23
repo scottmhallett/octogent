@@ -97,7 +97,7 @@ export const PromptsPrimaryView = ({ enabled, onSidebarContent }: PromptsPrimary
       setNewPromptMode({ terminalId: agentId });
       setShowTerminal(true);
       onTerminalIdChange(agentId);
-    } catch {
+    } catch (_error) {
       // Silently fail — the user can retry
     } finally {
       setIsCreatingTerminal(false);

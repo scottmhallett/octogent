@@ -22,7 +22,7 @@ const readErrorMessage = async (response: Response, fallback: string) => {
   try {
     const payload = (await response.json()) as { error?: unknown };
     return typeof payload.error === "string" ? payload.error : fallback;
-  } catch {
+  } catch (_error) {
     return fallback;
   }
 };

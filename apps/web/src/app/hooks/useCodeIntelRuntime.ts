@@ -33,7 +33,7 @@ export const useCodeIntelRuntime = (enabled: boolean): CodeIntelRuntimeResult =>
       }
       const data = (await response.json()) as { events: CodeIntelEvent[] };
       setEvents(data.events);
-    } catch {
+    } catch (_error) {
       setError("Failed to connect to API");
     } finally {
       setIsLoading(false);

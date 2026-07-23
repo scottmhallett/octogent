@@ -10,10 +10,10 @@ import type {
   TerminalLifecycleState,
 } from "@octogent/core";
 import { isTerminalAgentProvider, isTerminalCompletionSoundId } from "@octogent/core";
-import type { IPty } from "node-pty";
 import type { WebSocket } from "ws";
 
 import type { AgentRuntimeState, AgentStateTracker } from "../agentStateDetection";
+import type { ConversationTranscriptEventPayload } from "./conversations";
 
 export type TerminalStateMessage = {
   type: "state";
@@ -53,10 +53,21 @@ export type Disposable = {
   dispose: () => void;
 };
 
+export type AgentSessionProcess = {
+  pid?: number;
+  write: (data: string) => void;
+  resize: (cols: number, rows: number) => void;
+  kill: (signal?: string) => void;
+  onData: (listener: (chunk: string) => void) => Disposable;
+  onExit: (listener: (event: { exitCode: number; signal: number }) => void) => Disposable;
+  onState?: (listener: (state: AgentRuntimeState, toolName?: string) => void) => Disposable;
+  onTranscriptEvent?: (listener: (event: ConversationTranscriptEventPayload) => void) => Disposable;
+};
+
 export type TerminalSession = {
   terminalId: string;
   tentacleId: string;
-  pty: IPty;
+  pty: AgentSessionProcess;
   ptyDisposables?: Disposable[];
   clients: Set<WebSocket>;
   directListeners: Set<DirectSessionListener>;
@@ -84,7 +95,7 @@ export type TerminalSession = {
   hasSeenProcessing?: boolean;
   lastToolName?: string | undefined;
   bootstrapInput?: string | undefined;
-  promptDelivery?: "argv" | "deferred-paste" | undefined;
+  promptDelivery?: "argv" | "deferred-paste" | "app-server" | undefined;
 };
 
 export type TerminalNameOrigin = "generated" | "user" | "prompt";

@@ -51,6 +51,7 @@ export class CodexAppServerClient {
   private readonly notificationListeners = new Set<
     (notification: CodexAppServerNotification) => void
   >();
+  private readonly closeListeners = new Set<(error?: Error) => void>();
 
   constructor({ transport, requestIdStart = 1 }: CodexAppServerClientOptions) {
     this.transport = transport;
@@ -60,7 +61,11 @@ export class CodexAppServerClient {
     });
     this.transport.onClose((error) => {
       this.closed = true;
-      this.closePending(error ?? new Error("Codex app-server connection closed."));
+      const closeError = error ?? new Error("Codex app-server connection closed.");
+      this.closePending(closeError);
+      for (const listener of this.closeListeners) {
+        listener(closeError);
+      }
     });
   }
 
@@ -68,6 +73,13 @@ export class CodexAppServerClient {
     this.notificationListeners.add(listener);
     return () => {
       this.notificationListeners.delete(listener);
+    };
+  }
+
+  onClose(listener: (error?: Error) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => {
+      this.closeListeners.delete(listener);
     };
   }
 

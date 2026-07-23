@@ -20,7 +20,23 @@ Use Node.js `22+`.
 
 Check that your shell environment is available and executable.
 
-If startup fails with `Terminal session limit reached`, Octogent already has the configured number of live PTY-backed sessions. Stop unused terminals with `octogent terminal stop <terminal-id>` or prune inactive records with `octogent terminal prune`. The default cap is 32; set `OCTOGENT_MAX_TERMINAL_SESSIONS` to a positive integer before starting Octogent to adjust it.
+If startup fails with `Terminal session limit reached`, Octogent already has the configured number of live agent sessions. Stop unused terminals with `octogent terminal stop <terminal-id>` or prune inactive records with `octogent terminal prune`. The default cap is 32; set `OCTOGENT_MAX_TERMINAL_SESSIONS` to a positive integer before starting Octogent to adjust it.
+
+## Codex app-server mode fails
+
+Codex uses the existing PTY launch path by default. The native `codex app-server`
+driver is experimental and only used when `OCTOGENT_CODEX_RUNTIME=app-server`
+is set before starting Octogent.
+
+If app-server mode fails, verify:
+
+- `codex app-server --help` works from the same shell
+- Codex is authenticated
+- the project is trusted by Codex
+- `OCTOGENT_CODEX_RUNTIME` is set to exactly `app-server`
+
+Unset `OCTOGENT_CODEX_RUNTIME` to return Codex terminals to the default PTY
+runtime.
 
 ## Worktree terminal creation fails
 
@@ -48,6 +64,6 @@ That is expected. Channel messages are in-memory only and do not persist across 
 
 ## A terminal survived reload but not server restart
 
-That is also expected. PTY sessions can survive a reconnect window, but they do not survive an API restart.
+That is also expected. Live agent sessions can survive a reconnect window, but they do not survive an API restart.
 
-After restart, terminals that were persisted as running are marked `stale` when Octogent cannot reattach them to an in-memory PTY session. Use `octogent terminal list` to inspect lifecycle state, `octogent terminal stop <terminal-id>` or `octogent terminal kill <terminal-id>` for a recorded process, and `octogent terminal prune` to remove stale, stopped, or exited records from the UI.
+After restart, terminals that were persisted as running are marked `stale` when Octogent cannot reattach them to an in-memory session. Use `octogent terminal list` to inspect lifecycle state, `octogent terminal stop <terminal-id>` or `octogent terminal kill <terminal-id>` for a recorded process, and `octogent terminal prune` to remove stale, stopped, or exited records from the UI.

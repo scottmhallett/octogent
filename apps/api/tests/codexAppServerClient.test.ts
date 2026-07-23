@@ -97,6 +97,10 @@ describe("CodexAppServerClient", () => {
   it("marks the client closed when the transport closes externally", async () => {
     const transport = new FakeJsonLineTransport();
     const client = new CodexAppServerClient({ transport });
+    const closeEvents: string[] = [];
+    client.onClose((error) => {
+      closeEvents.push(error?.message ?? "closed");
+    });
 
     const requestPromise = client.request("thread/start", { cwd: "/repo" });
     expect(transport.writtenLines).toHaveLength(1);
@@ -111,5 +115,6 @@ describe("CodexAppServerClient", () => {
       client.notify({ method: "initialized", params: {} });
     }).toThrow("Codex app-server client is closed.");
     expect(transport.writtenLines).toHaveLength(1);
+    expect(closeEvents).toEqual(["Codex app-server connection closed."]);
   });
 });
