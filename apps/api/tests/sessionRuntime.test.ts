@@ -23,6 +23,8 @@ vi.mock("../src/terminalRuntime/ptyEnvironment", () => ({
   ensureNodePtySpawnHelperExecutable: ensureSpawnHelperMock,
 }));
 
+import { CodexAppServerClient } from "../src/terminalRuntime/codexAppServerClient";
+import { createCodexAppServerAgentProcess } from "../src/terminalRuntime/codexAppServerSession";
 import type { ConversationTranscriptEventPayload } from "../src/terminalRuntime/conversations";
 import { createSessionRuntime } from "../src/terminalRuntime/sessionRuntime";
 import type {
@@ -88,6 +90,36 @@ class FakeAgentProcess extends FakePty implements AgentSessionProcess {
 
   emitTranscriptEvent(event: ConversationTranscriptEventPayload) {
     this.emit("transcriptEvent", event);
+  }
+}
+
+class FakeJsonLineTransport {
+  writtenLines: string[] = [];
+  private readonly lineListeners = new Set<(line: string) => void>();
+  private readonly closeListeners = new Set<(error?: Error) => void>();
+
+  writeLine(line: string) {
+    this.writtenLines.push(line);
+  }
+
+  onLine(listener: (line: string) => void) {
+    this.lineListeners.add(listener);
+  }
+
+  onClose(listener: (error?: Error) => void) {
+    this.closeListeners.add(listener);
+  }
+
+  close() {
+    for (const listener of this.closeListeners) {
+      listener();
+    }
+  }
+
+  emitLine(line: string) {
+    for (const listener of this.lineListeners) {
+      listener(line);
+    }
   }
 }
 
@@ -158,6 +190,15 @@ const readTranscriptEvents = async (
             JSON.parse(line) as { type: string; text?: string; reason?: string; state?: string },
         )
     : [];
+};
+
+const waitForCondition = async (predicate: () => boolean) => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 };
 
 describe("createSessionRuntime", () => {
@@ -654,6 +695,75 @@ describe("createSessionRuntime", () => {
 
     fakeProcess.emitState("waiting_for_permission", "apply_patch");
     expect(onStateChange).toHaveBeenCalledWith(tentacleId, "waiting_for_permission", "apply_patch");
+
+    runtime.close();
+  });
+
+  it("tears down a Codex app-server session when the transport closes externally", async () => {
+    const tentacleId = "tentacle-1";
+    const terminals = new Map<string, PersistedTerminal>([
+      [
+        tentacleId,
+        {
+          terminalId: tentacleId,
+          tentacleId,
+          tentacleName: tentacleId,
+          createdAt: new Date().toISOString(),
+          workspaceMode: "shared",
+          agentProvider: "codex",
+        },
+      ],
+    ]);
+    const sessions = new Map<string, TerminalSession>();
+    const websocketServer = new FakeWebSocketServer();
+    const transport = new FakeJsonLineTransport();
+    const client = new CodexAppServerClient({ transport });
+    const transcriptDirectoryPath = createTemporaryDirectory();
+    const onSessionEnd = vi.fn();
+
+    const runtime = createSessionRuntime({
+      websocketServer: websocketServer as unknown as import("ws").WebSocketServer,
+      terminals,
+      sessions,
+      getTentacleWorkspaceCwd: () => process.cwd(),
+      isDebugPtyLogsEnabled: false,
+      ptyLogDir: process.cwd(),
+      transcriptDirectoryPath,
+      sessionIdleGraceMs: 60_000,
+      scrollbackMaxBytes: 1024,
+      codexRuntimeMode: "app-server",
+      createCodexAppServerProcess: ({ cwd }) =>
+        createCodexAppServerAgentProcess({
+          cwd,
+          client,
+        }),
+      onSessionEnd,
+    });
+
+    expect(runtime.startSession(tentacleId)).toBe(true);
+    await waitForCondition(() => transport.writtenLines.length > 0);
+    expect(transport.writtenLines[0]).toContain('"method":"initialize"');
+
+    transport.emitLine('{"id":0,"result":{"userAgent":"codex-test"}}');
+    await waitForCondition(() =>
+      transport.writtenLines.some((line) => line.includes("thread/start")),
+    );
+    transport.emitLine('{"id":1,"result":{"thread":{"id":"thr_1"}}}');
+    await waitForCondition(() =>
+      sessions.get(tentacleId)?.scrollbackChunks.join("").includes("thread thr_1 ready"),
+    );
+
+    transport.close();
+    await waitForCondition(() => !sessions.has(tentacleId));
+
+    expect(sessions.has(tentacleId)).toBe(false);
+    expect(onSessionEnd).toHaveBeenCalledWith(
+      tentacleId,
+      expect.objectContaining({
+        reason: "pty_exit",
+        exitCode: 1,
+      }),
+    );
 
     runtime.close();
   });

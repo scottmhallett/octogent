@@ -74,6 +74,9 @@ class CodexAppServerAgentProcess implements AgentSessionProcess {
     this.client.onNotification((notification) => {
       this.handleNotification(notification);
     });
+    this.client.onClose((error) => {
+      this.handleClientClose(error);
+    });
 
     const firstPrompt = initialPrompt ?? initialInputDraft;
     if (firstPrompt) {
@@ -178,6 +181,9 @@ class CodexAppServerAgentProcess implements AgentSessionProcess {
       this.emitter.emit("data", `[Codex app-server thread ${this.threadId} ready]\r\n`);
       this.flushQueuedPrompts();
     } catch (error) {
+      if (this.closed) {
+        return;
+      }
       const message = error instanceof Error ? error.message : "Unknown app-server startup error.";
       this.emitter.emit("data", `[Codex app-server failed: ${message}]\r\n`);
       this.closed = true;
@@ -251,6 +257,17 @@ class CodexAppServerAgentProcess implements AgentSessionProcess {
       }
       this.emitter.emit("transcriptEvent", event);
     }
+  }
+
+  private handleClientClose(error?: Error): void {
+    if (this.closed) {
+      return;
+    }
+
+    this.closed = true;
+    const message = error?.message ?? "Codex app-server connection closed.";
+    this.emitter.emit("data", `[Codex app-server exited: ${message}]\r\n`);
+    this.emitter.emit("exit", { exitCode: 1, signal: 0 });
   }
 }
 
