@@ -13,12 +13,14 @@ If the current directory has not been initialized yet, `octogent` also creates o
 ## Initialize a project
 
 ```bash
-octogent init [project-name]
+octogent init [project-name] [--provider codex|claude-code]
 ```
 
 Creates or updates the `.octogent/` scaffold in the current directory without starting the dashboard.
 
 Use this when you want to initialize the project explicitly or set the project display name ahead of time. In normal use, running `octogent` inside the codebase is enough to initialize and start the app.
+
+Use `--provider codex` or `--provider claude-code` to set the default agent provider explicitly during initialization.
 
 ## List registered projects
 
@@ -57,6 +59,7 @@ Options:
 - `--parent-terminal-id`: parent terminal ID for child terminals
 - `--prompt-template`: prompt template name
 - `--prompt-variables`: JSON object of prompt template variables
+- `--provider`: `codex` or `claude-code`; overrides the default provider for this terminal
 
 ## List terminals
 

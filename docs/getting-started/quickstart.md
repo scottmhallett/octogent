@@ -45,7 +45,7 @@ The tentacle files are where the job keeps its local context:
 - `todo.md` for concrete tasks
 - extra markdown files for notes, architecture, handoff, or examples
 
-You do not need to treat these as manual setup that the developer always writes by hand. One of the points of Octogent is that **Claude Code** can help create, update, and maintain these files from inside the app as the work becomes clearer.
+You do not need to treat these as manual setup that the developer always writes by hand. One of the points of Octogent is that the selected coding agent can help create, update, and maintain these files from inside the app as the work becomes clearer.
 
 ## 4. Create a terminal
 
@@ -54,6 +54,7 @@ octogent terminal create --name "API worker" --tentacle-id api-backend
 ```
 
 Use `--workspace-mode worktree` if you want an isolated git worktree.
+Use `--provider codex` or `--provider claude-code` when you want to override the configured default for a specific terminal.
 
 ## 5. Delegate from todo items
 

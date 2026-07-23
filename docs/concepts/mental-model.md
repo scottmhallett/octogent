@@ -13,13 +13,15 @@ flowchart TD
   API --> Files[".octogent/tentacles/*"]
   API --> State["~/.octogent/projects/<id>/state/*"]
   API --> PTY[PTY-backed agent sessions]
-  PTY --> Hooks[Claude hooks]
+  API --> AppServer[Codex app-server sessions]
+  PTY --> Hooks[Provider hooks]
+  AppServer --> API
   Hooks --> API
 ```
 
 - the **developer** defines boundaries, reviews output, and decides what lands
 - a **tentacle** is the durable job context: markdown files, todos, notes, and handoff state
-- a **terminal** is the runtime record plus, when active, one PTY-backed agent session
+- a **terminal** is the runtime record plus, when active, one provider-backed agent session
 - a **worker** is a terminal assigned to one narrower task, usually a todo item
 - a **parent** is a terminal that coordinates workers and performs final review or merge work
 - a **channel** is an in-memory queue used to inject short messages into live terminals
@@ -49,7 +51,7 @@ A tentacle can be used with:
 
 The tentacle decides *what the job is about*. The worktree decides *where the code changes happen*.
 
-In shared mode, the PTY starts in the main workspace. In worktree mode, the API creates `.octogent/worktrees/<worktree-id>/` on branch `octogent/<worktree-id>` and starts the PTY there. The agent-facing context still stays in `.octogent/tentacles/<tentacle-id>/`.
+In shared mode, the agent session starts in the main workspace. In worktree mode, the API creates `.octogent/worktrees/<worktree-id>/` on branch `octogent/<worktree-id>` and starts the session there. The agent-facing context still stays in `.octogent/tentacles/<tentacle-id>/`.
 
 ## What belongs in files
 
@@ -70,15 +72,15 @@ Deck reads these files directly. It parses the first heading and first non-empty
 The runtime owns:
 
 - terminal records and lifecycle state
-- live PTY sessions
+- live provider sessions
 - websocket transport
 - UI state
 - transcripts
 - message delivery state
 
-That data helps the app run, but it is not the same thing as the durable job context. Terminal records survive API restarts. PTY sessions, WebSocket clients, and channel queues do not.
+That data helps the app run, but it is not the same thing as the durable job context. Terminal records survive API restarts. Provider sessions, WebSocket clients, and channel queues do not.
 
-On startup, Octogent reloads terminal records from `tentacles.json`. If a record says it was running, Octogent cannot reattach to the old in-memory PTY, so the record is reconciled to `stale` with a lifecycle reason.
+On startup, Octogent reloads terminal records from `tentacles.json`. If a record says it was running, Octogent cannot reattach to the old in-memory provider session, so the record is reconciled to `stale` with a lifecycle reason.
 
 ## How delegation is supposed to work
 
@@ -98,5 +100,5 @@ If the boundary is vague, the orchestration gets worse. Octogent helps organize 
 
 - terminal coding agents can be treated as building blocks inside an orchestration layer
 - file-based context is more reliable than trying to keep everything inside one long conversation
-- one Claude Code session can coordinate other Claude Code sessions in a visible way
+- one agent session can coordinate other agent sessions in a visible way
 - simple task lists and short messages are enough for some useful multi-agent workflows

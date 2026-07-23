@@ -6,7 +6,7 @@ Octogent has three main layers:
 
 - **agent-facing files** in `.octogent/tentacles/<tentacle-id>/`, which hold context, todos, and handoff notes
 - **runtime state** under `~/.octogent/projects/<project-id>/state/`, which tracks terminals, UI state, transcripts, and app metadata
-- **live sessions** in the API process, where WebSocket connections are attached to PTY-backed Claude Code terminals
+- **live sessions** in the API process, where WebSocket connections are attached to provider-backed terminals
 
 ## Start here
 

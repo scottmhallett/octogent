@@ -38,6 +38,16 @@ Project-local Claude Code skills, when present, live under:
       SKILL.md
 ```
 
+Project-local Codex configuration, when present, lives under:
+
+```text
+.codex/
+  config.toml
+  hooks.json
+```
+
+Octogent may manage `.codex/hooks.json` entries for Codex-backed PTY sessions. Existing non-Octogent hook entries should be preserved.
+
 ## Global state
 
 Per-project runtime state is stored under:
@@ -59,7 +69,7 @@ Notable files:
 
 `deck.json` stores Deck presentation metadata that is not part of the agent-facing tentacle files.
 
-`transcripts/*.jsonl` stores conversation transcript events separately from PTY scrollback. Scrollback is in memory and bounded; transcripts are persisted.
+`transcripts/*.jsonl` stores conversation transcript events separately from terminal scrollback. Scrollback is in memory and bounded; transcripts are persisted.
 
 ## Prompt storage
 

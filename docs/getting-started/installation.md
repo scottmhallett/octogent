@@ -5,12 +5,12 @@ Octogent is a local Node.js project with a local API and web UI.
 ## Requirements
 
 - Node.js `22+`
-- `claude` for the supported workflow
+- at least one supported agent provider: `codex` or `claude`
 - `git` for worktree terminals
 - `gh` for GitHub pull request features
-- `curl` for the current Claude hook callback flow
+- `curl` for hook callback flows
 
-The current docs are Claude Code-first. Some provider plumbing exists in the codebase, but it is not the supported story yet.
+Claude Code and Codex are both supported provider targets. Codex uses the PTY path by default; the native `codex app-server` runtime remains opt-in and experimental.
 
 ## Local development install
 
@@ -46,7 +46,8 @@ Running `octogent` inside a project directory will:
 
 ## Startup rules
 
-- startup fails if neither `claude` nor another supported provider binary is available
+- startup fails if neither `codex` nor `claude` is available
+- first-run setup records a default provider when possible
 - startup warns when optional integrations like `git`, `gh`, or `curl` are missing
 
 ## Next step
