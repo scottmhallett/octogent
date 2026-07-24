@@ -5,9 +5,9 @@ Octogent exposes a local HTTP and WebSocket API.
 The API has two different kinds of state:
 
 - persisted project state, such as terminal records, Deck metadata, UI state, and transcripts
-- in-memory runtime state, such as live PTYs, attached WebSockets, scrollback, and channel queues
+- in-memory runtime state, such as live provider sessions, attached WebSockets, scrollback, and channel queues
 
-Most HTTP routes either read/write persisted files or create runtime records. WebSocket routes attach clients to live PTY sessions owned by the API process.
+Most HTTP routes either read/write persisted files or create runtime records. WebSocket routes attach clients to live provider sessions owned by the API process.
 
 ## Terminals
 
@@ -20,9 +20,11 @@ Most HTTP routes either read/write persisted files or create runtime records. We
 - `POST /api/terminals/:terminalId/kill` - kills an active session or recorded stale process
 - `WS /api/terminals/:terminalId/ws` - streams live terminal IO over WebSocket
 
-Terminal snapshots include `lifecycleState` when known. Supported lifecycle states are `registered`, `running`, `stopped`, `exited`, and `stale`. Stale terminals are records that were persisted as running but could not be reattached to a live Octogent PTY session after startup.
+Terminal snapshots include `lifecycleState` when known. Supported lifecycle states are `registered`, `running`, `stopped`, `exited`, and `stale`. Stale terminals are records that were persisted as running but could not be reattached to a live Octogent provider session after startup.
 
-Creating a terminal registers metadata first. A PTY starts immediately only when an initial prompt is provided, a WebSocket attaches, or an internal direct listener starts the session. Worktree terminals also create their worktree before the terminal record is exposed.
+Creating a terminal registers metadata first. A provider session starts immediately only when an initial prompt is provided, a WebSocket attaches, or an internal direct listener starts the session. Worktree terminals also create their worktree before the terminal record is exposed.
+
+Terminal creation accepts an optional `agentProvider` value. Supported values are `codex` and `claude-code`; when omitted, Octogent uses the configured default provider.
 
 ## Git and worktrees
 
@@ -71,13 +73,15 @@ Channel messages are queued in memory. The POST body provides `fromTerminalId` a
 
 ## Hooks
 
-- `POST /api/hooks/:hookName` - ingests lifecycle events coming from Claude Code hooks
+- `POST /api/hooks/:hookName` - ingests lifecycle events coming from provider hooks
 
 Current hook names:
 
 - `session-start`
 - `user-prompt-submit`
 - `pre-tool-use`
+- `permission-request`
+- `post-tool-use`
 - `notification`
 - `stop`
 
@@ -86,7 +90,7 @@ Current hook names:
 - `GET /api/codex/usage` - returns Codex usage data when available
 - `GET /api/claude/usage` - returns Claude usage data when available
 - `GET /api/github/summary` - returns GitHub summary and repo telemetry data
-- `GET /api/analytics/usage-heatmap?scope=all|project` - returns heatmap data from Claude session history
+- `GET /api/analytics/usage-heatmap?scope=all|project` - returns heatmap data from Claude session history and Octogent transcript estimates when available
 
 ## UI state
 

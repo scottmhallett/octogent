@@ -22,7 +22,7 @@ When a message is sent, Octogent:
 1. verifies the target terminal record exists
 2. appends the message to that terminal's in-memory queue
 3. marks it as undelivered
-4. injects pending messages into the target PTY when the target session is idle
+4. injects pending messages into the target session when that session is idle
 
 Delivered messages are written into the terminal input as lines like:
 

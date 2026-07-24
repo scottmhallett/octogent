@@ -18,7 +18,12 @@ Use Node.js `22+`.
 
 ## Terminal startup fails
 
-Check that your shell environment is available and executable.
+Check that your shell environment is available and executable, and that at least one supported provider binary is on `PATH`.
+
+Provider checks:
+
+- Codex: `codex --version`, `codex login`, and project trust when Codex prompts for it.
+- Claude Code: `claude --version`, Claude authentication, and hook callback dependencies.
 
 If startup fails with `Terminal session limit reached`, Octogent already has the configured number of live agent sessions. Stop unused terminals with `octogent terminal stop <terminal-id>` or prune inactive records with `octogent terminal prune`. The default cap is 32; set `OCTOGENT_MAX_TERMINAL_SESSIONS` to a positive integer before starting Octogent to adjust it.
 

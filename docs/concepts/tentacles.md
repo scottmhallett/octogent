@@ -48,7 +48,7 @@ Examples:
 - what already exists
 - constraints and edge cases
 - what not to break
-- any Claude Code skills that are especially useful for this tentacle, when relevant
+- any provider-specific skills or guidance that are especially useful for this tentacle, when relevant
 
 The first heading and first non-empty paragraph are runtime-significant. Keep them stable and useful because they become the name and description shown in Deck, Canvas, prompt summaries, and terminal creation flows.
 
@@ -111,6 +111,6 @@ In shared mode, all terminals operate in the main workspace, so the context boun
 ## Failure boundaries
 
 - deleting a tentacle removes its agent-facing files, but terminal records are separate runtime state
-- restarting the API preserves terminal metadata and transcripts but not live PTYs
+- restarting the API preserves terminal metadata and transcripts but not live provider sessions
 - channel messages do not persist, so durable handoffs belong in tentacle markdown
 - worktree branches are tied to worktree-backed terminals, not to the tentacle folder itself

@@ -42,7 +42,7 @@ This creates the tentacle folder at `.octogent/tentacles/<name>/` with an `CONTE
 
 For each created tentacle, **read the actual source code** in the directories that fall under that department's scope. Don't work from memory or assumptions — open the files, understand the patterns, conventions, and architectural choices that are actually in use. Then write what you learned into the tentacle's files.
 
-Before you finalize a tentacle's `CONTEXT.md`, check whether project Claude Code skills exist in `.claude/skills/`. Each skill lives in its own folder with a `SKILL.md` file. If you find relevant skills for that tentacle, append this exact block at the bottom of `CONTEXT.md`:
+Before you finalize a tentacle's `CONTEXT.md`, check whether project Claude Code skills exist in `.claude/skills/`. Each skill lives in its own folder with a `SKILL.md` file. If you find relevant skills for that tentacle, append this exact block at the bottom of `CONTEXT.md`. This block is Claude-specific; for Codex-backed work, put Codex guidance in the normal context sections instead, using project `AGENTS.md`, `.codex/config.toml`, hooks, sandbox, and approval notes when relevant.
 
 ```markdown
 <!-- octogent:suggested-skills:start -->

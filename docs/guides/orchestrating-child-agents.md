@@ -67,7 +67,7 @@ Worker terminal IDs are derived from the tentacle ID and todo index. That makes 
 
 ## Limits
 
-- PTY sessions do not survive API restarts
+- provider sessions do not survive API restarts
 - channel messages are in-memory only
 - delegation quality depends on the quality of `CONTEXT.md` and `todo.md`
 - shared-mode workers can still collide in files, because shared mode is not git isolation

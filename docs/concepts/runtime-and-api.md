@@ -14,7 +14,7 @@ flowchart TD
   Sessions --> PTY[PTY sessions]
   Sessions --> Codex[Codex app-server]
   Runtime --> Files["Project and global state"]
-  Runtime --> Hooks[Claude hook ingestion]
+  Runtime --> Hooks[Provider hook ingestion]
 ```
 
 ## Runtime responsibilities
@@ -24,7 +24,7 @@ The API process owns the moving parts that cannot live in markdown:
 - terminal registry loading, migration, and persistence
 - agent session lifecycle and scrollback
 - WebSocket upgrades for terminal IO and terminal list events
-- Claude hook installation and ingestion
+- provider hook installation and ingestion
 - worktree creation and cleanup for isolated terminals
 - transcript capture and conversation export
 - in-memory channel queues
@@ -50,7 +50,7 @@ Terminal WebSockets do not own the agent process. They are clients attached to a
 
 - project-local scaffold lives under `.octogent/`
 - runtime state lives under `~/.octogent/projects/<project-id>/state/`
-- transcript events persist independently from PTY scrollback
+- transcript events persist independently from terminal scrollback
 - live agent sessions do not survive API restarts
 - terminal records persisted as `running` are reconciled to `stale` on startup when no live Octogent session owns them
 
@@ -60,7 +60,7 @@ Deck metadata is separate from tentacle markdown. `deck.json` stores display/sta
 
 ## Terminal lifecycle
 
-Creating a terminal writes a registry record first. If an initial prompt is provided, the runtime immediately starts a PTY session. Otherwise, the PTY starts when a WebSocket or direct listener attaches.
+Creating a terminal writes a registry record first. If an initial prompt is provided, the runtime immediately starts a provider session. Otherwise, the session starts when a WebSocket or direct listener attaches.
 
 When an agent session starts, Octogent:
 
@@ -76,7 +76,7 @@ disabled by default; set `OCTOGENT_CODEX_RUNTIME=app-server` before starting
 Octogent to use it for Codex-backed terminals. Claude and default Codex
 sessions continue to use the PTY path.
 
-Stopping or killing a terminal tears down the active PTY and updates lifecycle metadata. Deleting a terminal also cascades to child terminals and removes worktrees for worktree-backed records.
+Stopping or killing a terminal tears down the active provider session and updates lifecycle metadata. Deleting a terminal also cascades to child terminals and removes worktrees for worktree-backed records.
 
 ## Hook mechanism
 
@@ -87,7 +87,7 @@ Hooks currently feed these mechanisms:
 - `UserPromptSubmit` marks the terminal active and can auto-name generated terminals from the first prompt
 - `PreToolUse` records the current tool and marks user-question waits
 - `Notification` marks permission waits and idle prompts
-- `Stop` parses Claude transcript data into stored conversations and releases the idle keep-alive
+- `Stop` records idle/completion moments, updates conversations, and releases the idle keep-alive
 - `PostToolUse` for `Edit|Write` feeds code-intel events
 
 Channel delivery is also tied to hooks. Messages are queued in memory and injected when a target session is idle, including after idle or stop hook events.

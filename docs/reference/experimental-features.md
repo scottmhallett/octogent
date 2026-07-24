@@ -17,7 +17,7 @@ The main project claim is about:
 
 - tentacles
 - todos
-- Claude Code terminals
+- provider-backed terminals
 - child-agent orchestration
 - inter-agent messaging
 
