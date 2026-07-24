@@ -8,9 +8,10 @@ Octogent is a local Node.js project with a local API and web UI.
 - at least one supported agent provider: `codex` or `claude`
 - `git` for worktree terminals
 - `gh` for GitHub pull request features
-- `curl` for hook callback flows
 
 Claude Code and Codex are both supported provider targets. Codex uses the PTY path by default; the native `codex app-server` runtime remains opt-in and experimental.
+
+`curl` is optional. Install it when using provider hook integrations that call back into the Octogent API, such as Claude Code hooks and Codex PTY hooks. Codex app-server mode does not use the hook callback transport.
 
 ## Local development install
 

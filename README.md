@@ -153,9 +153,10 @@ On first run, **Octogent** creates the local `.octogent/` scaffold automatically
 - at least one supported agent provider installed: `codex` or `claude`
 - `git` for worktree terminals
 - `gh` for GitHub pull request features
-- `curl` for hook callback flows
 
 Startup fails if neither `codex` nor `claude` is installed. If both are available, Octogent can use the configured default provider and supports per-terminal provider overrides where exposed by the CLI/API.
+
+`curl` is optional and only needed for provider hook integrations that call back into the Octogent API, such as Claude Code hooks and Codex PTY hooks. Codex app-server mode does not use the hook callback transport.
 
 ## What persists
 
